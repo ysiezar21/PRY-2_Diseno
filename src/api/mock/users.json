@@ -1,0 +1,47 @@
+[
+  {
+    "id": "1",
+    "cedula": "123456789",
+    "nombre_completo": "Administrador Principal",
+    "email": "admin@taller.com",
+    "password": "password123",
+    "role": "web_owner",
+    "createdAt": "2024-01-01T00:00:00.000Z",
+    "phone": "3001234567",
+    "address": "Calle 123, Ciudad"
+  },
+  {
+    "id": "2",
+    "cedula": "987654321",
+    "nombre_completo": "Juan Pérez Dueño",
+    "email": "taller@ejemplo.com",
+    "password": "password123",
+    "role": "workshop_owner",
+    "workshopId": "1",
+    "createdAt": "2024-01-02T00:00:00.000Z",
+    "phone": "3007654321",
+    "address": "Avenida 456, Ciudad"
+  },
+  {
+    "id": "3",
+    "cedula": "456789123",
+    "nombre_completo": "Carlos López Mecánico",
+    "email": "mecanico@ejemplo.com",
+    "password": "password123",
+    "role": "mechanic",
+    "workshopId": "1",
+    "createdAt": "2024-01-03T00:00:00.000Z",
+    "phone": "3009876543",
+    "specialty": "Motor"
+  },
+  {
+    "id": "4",
+    "cedula": "789123456",
+    "nombre_completo": "María García Cliente",
+    "email": "cliente@ejemplo.com",
+    "password": "password123",
+    "role": "client",
+    "createdAt": "2024-01-04T00:00:00.000Z",
+    "phone": "3004567890"
+  }
+]
