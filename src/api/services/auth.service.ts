@@ -55,8 +55,6 @@ class AuthService {
   }
 
   async login(credentials: LoginCredentials): Promise<ApiResponse<{ token: string; user: Omit<User, 'password'> }>> {
-  
-    
     // Simular delay
     await new Promise(resolve => setTimeout(resolve, 300));
     

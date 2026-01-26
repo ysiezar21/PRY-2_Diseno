@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { authService } from '../api/services/auth.service';
-import type { User, LoginCredentials, RegisterData, ApiResponse } from '../api/services/auth.service';
+import type { User, RegisterData, ApiResponse } from '../api/services/auth.service';
 
 export const useAuth = () => {
   const [user, setUser] = useState<Omit<User, 'password'> | null>(null);

@@ -9,7 +9,7 @@
 
 import { Box, Typography, Paper, Button } from '@mui/material';
 import { useAuthContext } from '../contexts/AuthContext';
-import { Build, People, CarRepair, Inventory, Receipt, TrendingUp } from '@mui/icons-material';
+import { People, CarRepair, Inventory, Receipt } from '@mui/icons-material';
 
 const TallerPage = () => {
   

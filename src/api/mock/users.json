@@ -8,7 +8,11 @@
     "role": "web_owner",
     "createdAt": "2024-01-01T00:00:00.000Z",
     "phone": "3001234567",
-    "address": "Calle 123, Ciudad"
+    "address": "Calle 123, Ciudad",
+    "workshopsId": [
+      "1",
+      "1"
+    ]
   },
   {
     "id": "2",
@@ -43,5 +47,17 @@
     "role": "client",
     "createdAt": "2024-01-04T00:00:00.000Z",
     "phone": "3004567890"
+  },
+  {
+    "id": "5",
+    "cedula": "213213123",
+    "nombre_completo": "123213",
+    "email": "deienerc3@estudiantec.cr",
+    "password": "123123",
+    "role": "workshop_owner",
+    "workshopId": "1",
+    "createdAt": "2026-01-26T23:08:48.657Z",
+    "phone": "123123",
+    "address": "123213"
   }
 ]

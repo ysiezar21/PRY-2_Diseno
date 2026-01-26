@@ -9,7 +9,7 @@
 
 import { Box, Typography, Paper, Button, Chip } from '@mui/material';
 import { useAuthContext } from '../contexts/AuthContext';
-import { Build, CarRepair, Schedule, CheckCircle, DirectionsCar, Inventory } from '@mui/icons-material';
+import { CarRepair, Schedule, DirectionsCar, Inventory } from '@mui/icons-material';
 
 const MecanicoPage = () => {
   
