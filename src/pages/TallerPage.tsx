@@ -1,213 +1,440 @@
 // src/pages/TallerPage.tsx
-
-// ============================================
-// PÁGINA: Panel del Dueño de Taller
-// ============================================
-// Esta página es exclusiva para usuarios con rol 'workshop_owner'.
-// Permite gestionar todas las operaciones de su taller: reparaciones,
-// mecánicos, inventario, facturación y ver estadísticas del negocio.
-
-import { Box, Typography, Paper, Button } from '@mui/material';
+import { useState, useEffect } from 'react';
+import {
+  Box,
+  Typography,
+  Paper,
+  Button,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
+  Alert,
+  CircularProgress,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  IconButton,
+} from '@mui/material';
 import { useAuthContext } from '../contexts/AuthContext';
-import { People, CarRepair, Inventory, Receipt } from '@mui/icons-material';
+import { People, CarRepair, Inventory, Receipt, Delete } from '@mui/icons-material';
+import { mechanicService, CreateMechanicData } from '../api/services/mechanic.service';
 
 const TallerPage = () => {
-  
-  // Obtiene la información del dueño del taller actualmente logueado
   const { user } = useAuthContext();
 
+  // Estados para el modal de agregar mecánico
+  const [openModal, setOpenModal] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  // Estado para la lista de mecánicos
+  const [mechanics, setMechanics] = useState<any[]>([]);
+  const [loadingMechanics, setLoadingMechanics] = useState(false);
+
+  // Estados para el formulario
+  const [formData, setFormData] = useState<CreateMechanicData>({
+    cedula: '',
+    nombre_completo: '',
+    email: '',
+    password: '',
+    phone: '',
+    specialty: '',
+  });
+
+  // Cargar mecánicos al montar el componente
+  useEffect(() => {
+    if (user?.workshopId) {
+      loadMechanics();
+    }
+  }, [user?.workshopId]);
+
+  // Función para cargar mecánicos
+  const loadMechanics = async () => {
+    if (!user?.workshopId) return;
+
+    setLoadingMechanics(true);
+    try {
+      const result = await mechanicService.getMechanicsByWorkshop(user.workshopId);
+      if (result.success && result.data) {
+        setMechanics(result.data);
+      }
+    } catch (err) {
+      console.error('Error cargando mecánicos:', err);
+    } finally {
+      setLoadingMechanics(false);
+    }
+  };
+
+  // Abrir modal
+  const handleOpenModal = () => {
+    setOpenModal(true);
+    setError(null);
+    setSuccess(null);
+  };
+
+  // Cerrar modal
+  const handleCloseModal = () => {
+    setOpenModal(false);
+    setFormData({
+      cedula: '',
+      nombre_completo: '',
+      email: '',
+      password: '',
+      phone: '',
+      specialty: '',
+    });
+    setError(null);
+    setSuccess(null);
+  };
+
+  // Manejar cambios en el formulario
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
+  };
+
+  // Enviar formulario
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    setSuccess(null);
+
+    if (!user?.workshopId) {
+      setError('No se encontró el ID del taller');
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const result = await mechanicService.createMechanic(user.workshopId, formData);
+
+      if (result.success) {
+        setSuccess('¡Mecánico agregado exitosamente!');
+        await loadMechanics(); // Recargar lista
+        setTimeout(() => {
+          handleCloseModal();
+        }, 2000);
+      } else {
+        setError(result.message);
+      }
+    } catch (err) {
+      setError('Error al agregar el mecánico. Intenta de nuevo.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Eliminar mecánico
+  const handleDeleteMechanic = async (mechanicId: string) => {
+    if (!window.confirm('¿Estás seguro de eliminar este mecánico?')) {
+      return;
+    }
+
+    try {
+      const result = await mechanicService.deleteMechanic(mechanicId);
+      if (result.success) {
+        await loadMechanics();
+        setSuccess('Mecánico eliminado exitosamente');
+        setTimeout(() => setSuccess(null), 3000);
+      } else {
+        setError(result.message);
+      }
+    } catch (err) {
+      setError('Error al eliminar el mecánico');
+    }
+  };
+
   return (
-    // ============================================
-    // CONTENEDOR PRINCIPAL DE LA PÁGINA
-    // ============================================
-    <Box sx={{ p: 3 }}>  {/* Padding de 24px en todos los lados */}
-      
-      {/* ============================================ */}
-      {/* HEADER: Información del Dueño de Taller */}
-      {/* ============================================ */}
-      {/* Tarjeta destacada con fondo rosa/rojo que muestra la info del dueño */}
+    <Box sx={{ p: 3 }}>
+      {/* Header */}
       <Paper sx={{ p: 4, mb: 4, backgroundColor: 'secondary.main', color: 'white' }}>
-        
-        {/* Título principal con emoji de llave inglesa para enfatizar el rol */}
         <Typography variant="h3" gutterBottom>
           🔧 Panel del Dueño de Taller
         </Typography>
-        
-        {/* Saludo personalizado con el nombre del dueño del taller */}
-        <Typography variant="h5">
-          Bienvenido, {user?.nombre_completo}
-        </Typography>
-        
-        {/* Información del rol del usuario */}
+        <Typography variant="h5">Bienvenido, {user?.nombre_completo}</Typography>
         <Typography variant="body1" sx={{ mt: 2 }}>
           Rol: <strong>Dueño de Taller</strong>
         </Typography>
-        
-        {/* Detalles adicionales: cédula y email del dueño */}
         <Typography variant="body2" sx={{ mt: 1 }}>
           Cédula: {user?.cedula} | Email: {user?.email}
         </Typography>
       </Paper>
 
-      {/* ============================================ */}
-      {/* TÍTULO DE SECCIÓN: Funcionalidades */}
-      {/* ============================================ */}
+      {/* Mensajes globales */}
+      {success && (
+        <Alert severity="success" sx={{ mb: 2 }}>
+          {success}
+        </Alert>
+      )}
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {error}
+        </Alert>
+      )}
+
       <Typography variant="h4" gutterBottom sx={{ mt: 4 }}>
         Mi Taller - Funcionalidades:
       </Typography>
 
-      {/* ============================================ */}
-      {/* GRID DE TARJETAS DE FUNCIONALIDADES */}
-      {/* ============================================ */}
-      {/* Contenedor flexible que organiza las tarjetas en filas adaptables */}
+      {/* Grid de Tarjetas */}
       <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', mt: 3 }}>
-        
-        {/* ============================================ */}
-        {/* TARJETA 1: Gestionar Reparaciones */}
-        {/* ============================================ */}
-        {/* Permite ver, crear, editar y dar seguimiento a las reparaciones */}
+        {/* Tarjeta: Gestionar Reparaciones */}
         <Paper sx={{ p: 3, flex: 1, minWidth: 250 }}>
-          {/* Icono de reparación de auto en color azul */}
           <CarRepair sx={{ fontSize: 50, color: 'primary.main', mb: 2 }} />
-          
           <Typography variant="h6" gutterBottom>
             Gestionar Reparaciones
           </Typography>
-          
-          {/* Descripción de la funcionalidad */}
           <Typography variant="body2" color="text.secondary">
             Ver, crear y administrar reparaciones en tu taller
           </Typography>
-          
-          {/* Botón para acceder a la funcionalidad */}
-          {/* TODO: Agregar onClick para navegar a la página de reparaciones */}
           <Button variant="outlined" sx={{ mt: 2 }}>
             Ver Reparaciones
           </Button>
         </Paper>
 
-        {/* ============================================ */}
-        {/* TARJETA 2: Mis Mecánicos */}
-        {/* ============================================ */}
-        {/* Permite gestionar el equipo de mecánicos y sus asignaciones */}
+        {/* Tarjeta: Mis Mecánicos */}
         <Paper sx={{ p: 3, flex: 1, minWidth: 250 }}>
-          {/* Icono de personas en color rosa/rojo */}
           <People sx={{ fontSize: 50, color: 'secondary.main', mb: 2 }} />
-          
           <Typography variant="h6" gutterBottom>
             Mis Mecánicos
           </Typography>
-          
-          {/* Descripción de la funcionalidad */}
           <Typography variant="body2" color="text.secondary">
             Administrar tu equipo de mecánicos y sus asignaciones
           </Typography>
-          
-          {/* Botón para acceder a la funcionalidad */}
-          {/* TODO: Agregar onClick para navegar a la página de mecánicos */}
-          <Button variant="outlined" sx={{ mt: 2 }}>
-            Ver Equipo
+          <Button variant="contained" sx={{ mt: 2 }} onClick={handleOpenModal}>
+            Agregar Mecánico
           </Button>
         </Paper>
 
-        {/* ============================================ */}
-        {/* TARJETA 3: Inventario */}
-        {/* ============================================ */}
-        {/* Control de stock de repuestos, herramientas y materiales */}
+        {/* Tarjeta: Inventario */}
         <Paper sx={{ p: 3, flex: 1, minWidth: 250 }}>
-          {/* Icono de inventario en color naranja/amarillo */}
           <Inventory sx={{ fontSize: 50, color: 'warning.main', mb: 2 }} />
-          
           <Typography variant="h6" gutterBottom>
             Inventario
           </Typography>
-          
-          {/* Descripción de la funcionalidad */}
           <Typography variant="body2" color="text.secondary">
             Control de repuestos, herramientas y materiales
           </Typography>
-          
-          {/* Botón para acceder a la funcionalidad */}
-          {/* TODO: Agregar onClick para navegar a la página de inventario */}
           <Button variant="outlined" sx={{ mt: 2 }}>
             Ver Inventario
           </Button>
         </Paper>
 
-        {/* ============================================ */}
-        {/* TARJETA 4: Facturación */}
-        {/* ============================================ */}
-        {/* Genera facturas, recibos y controla los pagos recibidos */}
+        {/* Tarjeta: Facturación */}
         <Paper sx={{ p: 3, flex: 1, minWidth: 250 }}>
-          {/* Icono de recibo en color verde */}
           <Receipt sx={{ fontSize: 50, color: 'success.main', mb: 2 }} />
-          
           <Typography variant="h6" gutterBottom>
             Facturación
           </Typography>
-          
-          {/* Descripción de la funcionalidad */}
           <Typography variant="body2" color="text.secondary">
             Generar facturas, recibos y controlar pagos
           </Typography>
-          
-          {/* Botón para acceder a la funcionalidad */}
-          {/* TODO: Agregar onClick para navegar a la página de facturación */}
           <Button variant="outlined" sx={{ mt: 2 }}>
             Facturar
           </Button>
         </Paper>
       </Box>
 
-      {/* ============================================ */}
-      {/* PANEL DE ESTADÍSTICAS DEL TALLER */}
-      {/* ============================================ */}
-      {/* Muestra métricas importantes del taller de forma resumida */}
+      {/* Lista de Mecánicos */}
+      <Paper sx={{ p: 3, mt: 4 }}>
+        <Typography variant="h5" gutterBottom>
+          👷 Mis Mecánicos ({mechanics.length})
+        </Typography>
+
+        {loadingMechanics ? (
+          <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
+            <CircularProgress />
+          </Box>
+        ) : mechanics.length === 0 ? (
+          <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', p: 3 }}>
+            No hay mecánicos registrados. Haz clic en "Agregar Mecánico" para comenzar.
+          </Typography>
+        ) : (
+          <TableContainer>
+            <Table>
+              <TableHead>
+                <TableRow>
+                  <TableCell>
+                    <strong>Nombre</strong>
+                  </TableCell>
+                  <TableCell>
+                    <strong>Cédula</strong>
+                  </TableCell>
+                  <TableCell>
+                    <strong>Email</strong>
+                  </TableCell>
+                  <TableCell>
+                    <strong>Teléfono</strong>
+                  </TableCell>
+                  <TableCell>
+                    <strong>Especialidad</strong>
+                  </TableCell>
+                  <TableCell align="center">
+                    <strong>Acciones</strong>
+                  </TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {mechanics.map((mechanic) => (
+                  <TableRow key={mechanic.id}>
+                    <TableCell>{mechanic.nombre_completo}</TableCell>
+                    <TableCell>{mechanic.cedula}</TableCell>
+                    <TableCell>{mechanic.email}</TableCell>
+                    <TableCell>{mechanic.phone || '-'}</TableCell>
+                    <TableCell>{mechanic.specialty || '-'}</TableCell>
+                    <TableCell align="center">
+                      <IconButton
+                        color="error"
+                        onClick={() => handleDeleteMechanic(mechanic.id)}
+                        size="small"
+                      >
+                        <Delete />
+                      </IconButton>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        )}
+      </Paper>
+
+      {/* Estadísticas */}
       <Paper sx={{ p: 3, mt: 4, backgroundColor: '#f5f5f5' }}>
-        
-        {/* Título del panel de resumen con emoji de gráfica */}
         <Typography variant="h6" gutterBottom>
           📈 Estadísticas de Mi Taller:
         </Typography>
-        
-        {/* Contenedor de las métricas en formato horizontal */}
         <Box sx={{ display: 'flex', gap: 3, mt: 2 }}>
-          
-          {/* Métrica 1: Número de mecánicos trabajando en el taller */}
           <Box>
-            <Typography variant="body2" color="text.secondary">Mecánicos Activos</Typography>
-            <Typography variant="h4">8</Typography>
+            <Typography variant="body2" color="text.secondary">
+              Mecánicos Activos
+            </Typography>
+            <Typography variant="h4">{mechanics.length}</Typography>
           </Box>
-          
-          {/* Métrica 2: Reparaciones que están en proceso actualmente */}
           <Box>
-            <Typography variant="body2" color="text.secondary">Reparaciones Activas</Typography>
+            <Typography variant="body2" color="text.secondary">
+              Reparaciones Activas
+            </Typography>
             <Typography variant="h4">5</Typography>
           </Box>
-          
-          {/* Métrica 3: Reparaciones finalizadas en el día de hoy */}
           <Box>
-            <Typography variant="body2" color="text.secondary">Completadas Hoy</Typography>
+            <Typography variant="body2" color="text.secondary">
+              Completadas Hoy
+            </Typography>
             <Typography variant="h4">3</Typography>
           </Box>
-          
-          {/* Métrica 4: Ingresos totales generados en el mes actual */}
           <Box>
-            <Typography variant="body2" color="text.secondary">Ingresos del Mes</Typography>
+            <Typography variant="body2" color="text.secondary">
+              Ingresos del Mes
+            </Typography>
             <Typography variant="h4">$4.5M</Typography>
           </Box>
-          
         </Box>
       </Paper>
-      
-      {/* NOTA PARA DESARROLLO: */}
-      {/* Los valores de las estadísticas (8, 5, 3, $4.5M) son datos de ejemplo */}
-      {/* En producción, estos deberían venir de una API que consulte la base de datos */}
-      {/* y filtre por el workshopId del usuario actual */}
-      
+
+      {/* Modal para agregar mecánico */}
+      <Dialog open={openModal} onClose={handleCloseModal} maxWidth="sm" fullWidth>
+        <DialogTitle>Agregar Nuevo Mecánico</DialogTitle>
+        <form onSubmit={handleSubmit}>
+          <DialogContent>
+            {error && (
+              <Alert severity="error" sx={{ mb: 2 }}>
+                {error}
+              </Alert>
+            )}
+            {success && (
+              <Alert severity="success" sx={{ mb: 2 }}>
+                {success}
+              </Alert>
+            )}
+
+            <TextField
+              fullWidth
+              label="Cédula"
+              name="cedula"
+              value={formData.cedula}
+              onChange={handleInputChange}
+              required
+              sx={{ mb: 2 }}
+            />
+
+            <TextField
+              fullWidth
+              label="Nombre Completo"
+              name="nombre_completo"
+              value={formData.nombre_completo}
+              onChange={handleInputChange}
+              required
+              sx={{ mb: 2 }}
+            />
+
+            <TextField
+              fullWidth
+              label="Correo Electrónico"
+              name="email"
+              type="email"
+              value={formData.email}
+              onChange={handleInputChange}
+              required
+              sx={{ mb: 2 }}
+            />
+
+            <TextField
+              fullWidth
+              label="Contraseña"
+              name="password"
+              type="password"
+              value={formData.password}
+              onChange={handleInputChange}
+              required
+              sx={{ mb: 2 }}
+            />
+
+            <TextField
+              fullWidth
+              label="Teléfono (opcional)"
+              name="phone"
+              value={formData.phone}
+              onChange={handleInputChange}
+              sx={{ mb: 2 }}
+            />
+
+            <TextField
+              fullWidth
+              label="Especialidad (opcional)"
+              name="specialty"
+              value={formData.specialty}
+              onChange={handleInputChange}
+              placeholder="Ej: Motor, Frenos, Transmisión"
+            />
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={handleCloseModal} disabled={loading}>
+              Cancelar
+            </Button>
+            <Button
+              type="submit"
+              variant="contained"
+              disabled={loading}
+              startIcon={loading && <CircularProgress size={20} />}
+            >
+              {loading ? 'Agregando...' : 'Agregar Mecánico'}
+            </Button>
+          </DialogActions>
+        </form>
+      </Dialog>
     </Box>
   );
 };
 
-// Exporta TallerPage para ser usado en AppRouter
 export default TallerPage;

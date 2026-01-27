@@ -9,5 +9,16 @@
     "phone": "123123",
     "address": "123213",
     "trabajos": []
+  },
+  {
+    "id": "2",
+    "nombre": "TallerDeiner",
+    "cedulaDueno": "703230930",
+    "nombreDueno": "Deiner Céspedes",
+    "email": "deienerc3@gmail.com",
+    "createdAt": "2026-01-27T01:06:31.492Z",
+    "phone": "89440930",
+    "address": "Limon,Cieneguita",
+    "trabajos": []
   }
 ]

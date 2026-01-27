@@ -11,7 +11,8 @@
     "address": "Calle 123, Ciudad",
     "workshopsId": [
       "1",
-      "1"
+      "1",
+      "2"
     ]
   },
   {
@@ -59,5 +60,17 @@
     "createdAt": "2026-01-26T23:08:48.657Z",
     "phone": "123123",
     "address": "123213"
+  },
+  {
+    "id": "6",
+    "cedula": "703230930",
+    "nombre_completo": "Deiner Céspedes",
+    "email": "deienerc3@gmail.com",
+    "password": "123123",
+    "role": "workshop_owner",
+    "workshopId": "2",
+    "createdAt": "2026-01-27T01:06:31.493Z",
+    "phone": "89440930",
+    "address": "Limon,Cieneguita"
   }
 ]

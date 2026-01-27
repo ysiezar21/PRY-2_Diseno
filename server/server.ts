@@ -60,38 +60,29 @@ async function writeJsonFile<T>(filePath: string, data: T[]): Promise<void> {
   await fs.writeFile(filePath, JSON.stringify(data, null, 2), 'utf8');
 }
 
-// ==================== API ROUTES ====================
+// ==================== API ROUTES - TALLERES ====================
 
 app.post('/api/create-workshop-with-owner', async (req: Request, res: Response) => {
   try {
-    const {
-      nombre,
-      cedulaDueno,
-      nombreDueno,
-      email,
-      password,
-      phone,
-      address
-    } = req.body;
+    const { nombre, cedulaDueno, nombreDueno, email, password, phone, address } = req.body;
 
     if (!nombre || !cedulaDueno || !nombreDueno || !email || !password) {
       return res.status(400).json({
         success: false,
-        message: 'Faltan campos requeridos'
+        message: 'Faltan campos requeridos',
       });
     }
 
     const workshops = await readJsonFile<Workshop>(WORKSHOPS_PATH);
     const users = await readJsonFile<User>(USERS_PATH);
 
-    const emailExists = workshops.some(w => w.email === email) || 
-                       users.some(u => u.email === email);
-    
+    const emailExists = workshops.some((w) => w.email === email) || users.some((u) => u.email === email);
+
     if (emailExists) {
       return res.status(400).json({
         success: false,
         message: 'Ya existe un taller o usuario con ese correo electrónico',
-        error: 'DUPLICATE_EMAIL'
+        error: 'DUPLICATE_EMAIL',
       });
     }
 
@@ -104,7 +95,7 @@ app.post('/api/create-workshop-with-owner', async (req: Request, res: Response) 
       createdAt: new Date().toISOString(),
       phone,
       address,
-      trabajos: []
+      trabajos: [],
     };
 
     const newUser: User = {
@@ -117,10 +108,10 @@ app.post('/api/create-workshop-with-owner', async (req: Request, res: Response) 
       workshopId: newWorkshop.id,
       createdAt: new Date().toISOString(),
       phone,
-      address
+      address,
     };
 
-    const webOwner = users.find(u => u.role === 'web_owner');
+    const webOwner = users.find((u) => u.role === 'web_owner');
     if (webOwner) {
       if (!webOwner.workshopsId) {
         webOwner.workshopsId = [];
@@ -145,20 +136,163 @@ app.post('/api/create-workshop-with-owner', async (req: Request, res: Response) 
         workshop: newWorkshop,
         user: {
           ...newUser,
-          password: undefined
-        }
-      }
+          password: undefined,
+        },
+      },
     });
-
   } catch (error) {
     console.error('❌ Error:', error);
     res.status(500).json({
       success: false,
       message: 'Error en el servidor',
-      error: 'SERVER_ERROR'
+      error: 'SERVER_ERROR',
     });
   }
 });
+
+// ==================== API ROUTES - MECÁNICOS ====================
+
+// Crear mecánico
+app.post('/api/mechanics', async (req: Request, res: Response) => {
+  try {
+    const { cedula, nombre_completo, email, password, phone, specialty, workshopId } = req.body;
+
+    if (!cedula || !nombre_completo || !email || !password || !workshopId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Faltan campos requeridos',
+      });
+    }
+
+    const users = await readJsonFile<User>(USERS_PATH);
+
+    // Validar email único
+    const emailExists = users.some((u) => u.email === email);
+    if (emailExists) {
+      return res.status(400).json({
+        success: false,
+        message: 'Ya existe un usuario con ese correo electrónico',
+        error: 'DUPLICATE_EMAIL',
+      });
+    }
+
+    // Validar que el taller existe
+    const workshops = await readJsonFile<Workshop>(WORKSHOPS_PATH);
+    const workshopExists = workshops.some((w) => w.id === workshopId);
+    if (!workshopExists) {
+      return res.status(404).json({
+        success: false,
+        message: 'Taller no encontrado',
+      });
+    }
+
+    const newMechanic: User = {
+      id: (users.length + 1).toString(),
+      cedula,
+      nombre_completo,
+      email,
+      password,
+      role: 'mechanic',
+      workshopId,
+      createdAt: new Date().toISOString(),
+      phone,
+      specialty,
+    };
+
+    users.push(newMechanic);
+    await writeJsonFile(USERS_PATH, users);
+
+    console.log('✅ Mecánico creado:');
+    console.log('   👤 Nombre:', newMechanic.nombre_completo);
+    console.log('   🔧 Especialidad:', newMechanic.specialty);
+    console.log('   🏢 Taller ID:', newMechanic.workshopId);
+
+    res.status(201).json({
+      success: true,
+      message: 'Mecánico creado exitosamente',
+      data: {
+        ...newMechanic,
+        password: undefined,
+      },
+    });
+  } catch (error) {
+    console.error('❌ Error creando mecánico:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error en el servidor',
+      error: 'SERVER_ERROR',
+    });
+  }
+});
+
+// Obtener mecánicos por taller
+app.get('/api/mechanics', async (req: Request, res: Response) => {
+  try {
+    const { workshopId } = req.query;
+
+    const users = await readJsonFile<User>(USERS_PATH);
+
+    // Filtrar solo mecánicos
+    let mechanics = users.filter((u) => u.role === 'mechanic');
+
+    // Si se especifica workshopId, filtrar por ese taller
+    if (workshopId) {
+      mechanics = mechanics.filter((m) => m.workshopId === workshopId);
+    }
+
+    // No enviar contraseñas
+    const mechanicsWithoutPassword = mechanics.map((m) => ({
+      ...m,
+      password: undefined,
+    }));
+
+    res.json(mechanicsWithoutPassword);
+  } catch (error) {
+    console.error('❌ Error obteniendo mecánicos:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error al obtener mecánicos',
+    });
+  }
+});
+
+// Eliminar mecánico
+app.delete('/api/mechanics/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const users = await readJsonFile<User>(USERS_PATH);
+
+    const mechanicIndex = users.findIndex((u) => u.id === id && u.role === 'mechanic');
+
+    if (mechanicIndex === -1) {
+      return res.status(404).json({
+        success: false,
+        message: 'Mecánico no encontrado',
+      });
+    }
+
+    const deletedMechanic = users[mechanicIndex];
+    users.splice(mechanicIndex, 1);
+
+    await writeJsonFile(USERS_PATH, users);
+
+    console.log('✅ Mecánico eliminado:', deletedMechanic.nombre_completo);
+
+    res.json({
+      success: true,
+      message: 'Mecánico eliminado exitosamente',
+    });
+  } catch (error) {
+    console.error('❌ Error eliminando mecánico:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error al eliminar mecánico',
+    });
+  }
+});
+
+// ==================== UTILIDADES ====================
 
 app.get('/api/health', (req: Request, res: Response) => {
   res.json({ status: 'ok', message: 'Server is running' });
@@ -169,7 +303,7 @@ app.get('/api/health', (req: Request, res: Response) => {
 if (IS_PRODUCTION) {
   const distPath = path.join(__dirname, '..', 'dist');
   app.use(express.static(distPath));
-  
+
   app.get('*', (req: Request, res: Response) => {
     res.sendFile(path.join(distPath, 'index.html'));
   });

@@ -16,7 +16,7 @@ export interface ApiResponse<T = any> {
   error?: string;
 }
 
-// ✅ CAMBIA ESTO
+
 const API_URL = '/api';
 
 class WorkshopService {
