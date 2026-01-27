@@ -22,7 +22,16 @@ import {
 } from '@mui/material';
 import { useAuthContext } from '../contexts/AuthContext';
 import { People, CarRepair, Inventory, Receipt, Delete } from '@mui/icons-material';
-import { mechanicService, CreateMechanicData } from '../api/services/mechanic.service';
+import { mechanicService } from '../api/services/mechanic.service';
+
+interface CreateMechanicData {
+  cedula: string;
+  nombre_completo: string;
+  email: string;
+  password: string;
+  phone?: string;
+  specialty?: string;
+}
 
 const TallerPage = () => {
   const { user } = useAuthContext();

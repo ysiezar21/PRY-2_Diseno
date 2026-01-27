@@ -1,0 +1,59 @@
+[
+  {
+    "id": "1",
+    "placa": "ABC123",
+    "marca": "Toyota",
+    "modelo": "Corolla",
+    "año": 2020,
+    "color": "Gris",
+    "clienteId": "4",
+    "trabajos": [
+      {
+        "id": "1",
+        "fecha": "2024-01-10T09:00:00.000Z",
+        "mecanicoId": "3",
+        "descripcion": "Mantenimiento general",
+        "costo": 50000,
+        "reparaciones": [
+          "Cambio de aceite",
+          "Cambio de filtro de aire",
+          "Revisión de frenos"
+        ]
+      }
+    ],
+    "createdAt": "2024-01-05T00:00:00.000Z"
+  },
+  {
+    "id": "2",
+    "placa": "abc123",
+    "marca": "toyota",
+    "modelo": "yaris",
+    "año": 2006,
+    "color": "gris",
+    "clienteId": "8",
+    "trabajos": [],
+    "createdAt": "2026-01-27T04:18:11.130Z"
+  },
+  {
+    "id": "3",
+    "placa": "abc124",
+    "marca": "toyota",
+    "modelo": "yaris",
+    "año": 2006,
+    "color": "gris",
+    "clienteId": "9",
+    "trabajos": [],
+    "createdAt": "2026-01-27T14:34:28.143Z"
+  },
+  {
+    "id": "4",
+    "placa": "cba123",
+    "marca": "toyota",
+    "modelo": "rav4",
+    "año": 2026,
+    "color": "gris",
+    "clienteId": "9",
+    "trabajos": [],
+    "createdAt": "2026-01-27T14:47:17.330Z"
+  }
+]

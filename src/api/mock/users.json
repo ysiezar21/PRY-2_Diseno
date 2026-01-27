@@ -72,5 +72,39 @@
     "createdAt": "2026-01-27T01:06:31.493Z",
     "phone": "89440930",
     "address": "Limon,Cieneguita"
+  },
+  {
+    "id": "7",
+    "cedula": "987654321",
+    "nombre_completo": "Mecanico Deiner",
+    "email": "m@gmail.com",
+    "password": "123123",
+    "role": "mechanic",
+    "workshopId": "2",
+    "createdAt": "2026-01-27T03:28:28.315Z",
+    "phone": "123123123",
+    "specialty": ""
+  },
+  {
+    "id": "8",
+    "cedula": "987654321",
+    "nombre_completo": "wsdfasfsdf",
+    "email": "c@gmail.com",
+    "password": "123123",
+    "role": "client",
+    "createdAt": "2026-01-27T04:18:11.125Z",
+    "phone": "83770715",
+    "address": "Matama, Beverly, del antiguo billar Toribio 250 metros norte, casa color café"
+  },
+  {
+    "id": "9",
+    "cedula": "789456123",
+    "nombre_completo": "cliente prueba",
+    "email": "cliente@gmail.com",
+    "password": "123",
+    "role": "client",
+    "createdAt": "2026-01-27T14:34:28.125Z",
+    "phone": "89440930",
+    "address": "Limon,Cieneguita"
   }
 ]
