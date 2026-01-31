@@ -22,103 +22,87 @@ import {
   IconButton,
   Tabs,
   Tab,
-  MenuItem,
+  Card,
+  CardContent,
+  CardActions,
   Divider,
-  Autocomplete,
+  List,
+  ListItem,
+  ListItemText,
+  Grid,
 } from '@mui/material';
 import { useAuthContext } from '../contexts/AuthContext';
-import { CarRepair, Schedule, DirectionsCar, Inventory, Delete, Add } from '@mui/icons-material';
-import { clientService } from '../api/services/client.service';
+import {
+  Add,
+  Delete,
+  Send,
+  Visibility,
+  Edit,
+  CheckCircle,
+  Cancel,
+} from '@mui/icons-material';
+import { valoracionService, type Valoracion, type TareaValoracion } from '../api/services/valoracion.service';
 import { vehicleService } from '../api/services/vehicle.service';
-
-interface CreateClientWithVehicleData {
-  cedula: string;
-  nombre_completo: string;
-  email: string;
-  password: string;
-  phone?: string;
-  address?: string;
-  vehiculo?: {
-    placa: string;
-    marca: string;
-    modelo: string;
-    año: number;
-    color?: string;
-  };
-}
-
-interface CreateVehicleData {
-  placa: string;
-  marca: string;
-  modelo: string;
-  año: number;
-  color?: string;
-  clienteId: string;
-}
+import { clientService } from '../api/services/client.service';
 
 const MecanicoPage = () => {
   const { user } = useAuthContext();
 
-  // Estados para modales
-  const [openClientModal, setOpenClientModal] = useState(false);
-  const [openVehicleModal, setOpenVehicleModal] = useState(false);
+  // Estados principales
+  const [currentTab, setCurrentTab] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [loadingData, setLoadingData] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  // Estados para listas
-  const [clients, setClients] = useState<any[]>([]);
+  // Datos
+  const [valoraciones, setValoraciones] = useState<Valoracion[]>([]);
   const [vehicles, setVehicles] = useState<any[]>([]);
-  const [loadingData, setLoadingData] = useState(false);
+  const [clients, setClients] = useState<any[]>([]);
 
-  // Tab actual
-  const [currentTab, setCurrentTab] = useState(0);
+  // Modal de valoración
+  const [openValoracionModal, setOpenValoracionModal] = useState(false);
+  const [selectedValoracion, setSelectedValoracion] = useState<Valoracion | null>(null);
 
-  // Formulario de cliente (con vehículo opcional)
-  const [clientFormData, setClientFormData] = useState<CreateClientWithVehicleData>({
-    cedula: '',
-    nombre_completo: '',
-    email: '',
-    password: '',
-    phone: '',
-    address: '',
-  });
-
-  // Checkbox para agregar vehículo al crear cliente
-  const [addVehicle, setAddVehicle] = useState(false);
-
-  // Formulario de vehículo
-  const [vehicleFormData, setVehicleFormData] = useState<CreateVehicleData>({
-    placa: '',
-    marca: '',
-    modelo: '',
-    año: new Date().getFullYear(),
-    color: '',
-    clienteId: '',
+  // Modal de tarea
+  const [openTareaModal, setOpenTareaModal] = useState(false);
+  const [tareaFormData, setTareaFormData] = useState({
+    nombre: '',
+    descripcion: '',
+    precioEstimado: 0,
   });
 
   // Cargar datos al montar
   useEffect(() => {
-    loadClients();
-    loadVehicles();
-  }, []);
+    if (user?.id) {
+      loadAllData();
+    }
+  }, [user?.id]);
 
-  const loadClients = async () => {
+  const loadAllData = async () => {
+    await Promise.all([
+      loadValoraciones(),
+      loadVehicles(),
+      loadClients(),
+    ]);
+  };
+
+  const loadValoraciones = async () => {
+    if (!user?.id) return;
     setLoadingData(true);
     try {
-      const result = await clientService.getAllClients();
+      const result = await valoracionService.getValoracionesByMecanico(user.id);
       if (result.success && result.data) {
-        setClients(result.data);
+        setValoraciones(result.data);
       }
     } catch (err) {
-      console.error('Error cargando clientes:', err);
+      console.error('Error cargando valoraciones:', err);
     } finally {
       setLoadingData(false);
     }
   };
 
   const loadVehicles = async () => {
-    setLoadingData(true);
     try {
       const result = await vehicleService.getVehicles();
       if (result.success && result.data) {
@@ -126,172 +110,190 @@ const MecanicoPage = () => {
       }
     } catch (err) {
       console.error('Error cargando vehículos:', err);
-    } finally {
-      setLoadingData(false);
     }
   };
 
-  // ========== CLIENTE ==========
-
-  const handleOpenClientModal = () => {
-    setOpenClientModal(true);
-    setError(null);
-    setSuccess(null);
-    setAddVehicle(false);
-  };
-
-  const handleCloseClientModal = () => {
-    setOpenClientModal(false);
-    setClientFormData({
-      cedula: '',
-      nombre_completo: '',
-      email: '',
-      password: '',
-      phone: '',
-      address: '',
-    });
-    setAddVehicle(false);
-    setError(null);
-    setSuccess(null);
-  };
-
-  const handleClientInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    
-    // Si es un campo del vehículo
-    if (name.startsWith('vehiculo.')) {
-      const vehicleField = name.replace('vehiculo.', '');
-      setClientFormData((prev) => ({
-        ...prev,
-        vehiculo: {
-          ...prev.vehiculo,
-          placa: prev.vehiculo?.placa || '',
-          marca: prev.vehiculo?.marca || '',
-          modelo: prev.vehiculo?.modelo || '',
-          año: prev.vehiculo?.año || new Date().getFullYear(),
-          color: prev.vehiculo?.color || '',
-          [vehicleField]: vehicleField === 'año' ? parseInt(value) || 0 : value,
-        },
-      }));
-    } else {
-      setClientFormData((prev) => ({
-        ...prev,
-        [name]: value,
-      }));
-    }
-  };
-
-  const handleSubmitClient = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
-    setSuccess(null);
-
+  const loadClients = async () => {
     try {
-      const dataToSend = { ...clientFormData };
-      
-      // Si no se va a agregar vehículo, remover el campo
-      if (!addVehicle) {
-        delete dataToSend.vehiculo;
-      }
-
-      const result = await clientService.createClient(dataToSend);
-
-      if (result.success) {
-        setSuccess(addVehicle ? '¡Cliente y vehículo creados exitosamente!' : '¡Cliente creado exitosamente!');
-        await loadClients();
-        if (addVehicle) await loadVehicles();
-        setTimeout(() => {
-          handleCloseClientModal();
-        }, 2000);
-      } else {
-        setError(result.message);
+      const result = await clientService.getAllClients();
+      if (result.success && result.data) {
+        setClients(result.data);
       }
     } catch (err) {
-      setError('Error al crear el cliente. Intenta de nuevo.');
-    } finally {
-      setLoading(false);
+      console.error('Error cargando clientes:', err);
     }
   };
 
-  // ========== VEHÍCULO ==========
+  // ========== GESTIÓN DE VALORACIONES ==========
 
-  const handleOpenVehicleModal = () => {
-    setOpenVehicleModal(true);
+  const handleOpenValoracion = (valoracion: Valoracion) => {
+    setSelectedValoracion(valoracion);
+    setOpenValoracionModal(true);
+  };
+
+  const handleCloseValoracionModal = () => {
+    setOpenValoracionModal(false);
+    setSelectedValoracion(null);
+  };
+
+  // ========== GESTIÓN DE TAREAS ==========
+
+  const handleOpenTareaModal = () => {
+    setOpenTareaModal(true);
     setError(null);
     setSuccess(null);
   };
 
-  const handleCloseVehicleModal = () => {
-    setOpenVehicleModal(false);
-    setVehicleFormData({
-      placa: '',
-      marca: '',
-      modelo: '',
-      año: new Date().getFullYear(),
-      color: '',
-      clienteId: '',
+  const handleCloseTareaModal = () => {
+    setOpenTareaModal(false);
+    setTareaFormData({
+      nombre: '',
+      descripcion: '',
+      precioEstimado: 0,
     });
     setError(null);
-    setSuccess(null);
   };
 
-  const handleVehicleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleTareaInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    setVehicleFormData((prev) => ({
+    setTareaFormData((prev) => ({
       ...prev,
-      [name]: name === 'año' ? parseInt(value) || 0 : value,
+      [name]: name === 'precioEstimado' ? parseFloat(value) || 0 : value,
     }));
   };
 
-  const handleSubmitVehicle = async (e: React.FormEvent) => {
+  const handleSubmitTarea = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!selectedValoracion) return;
+
     setLoading(true);
     setError(null);
     setSuccess(null);
 
     try {
-      const result = await vehicleService.createVehicle(vehicleFormData);
+      const result = await valoracionService.addTarea(
+        selectedValoracion.id,
+        tareaFormData
+      );
 
       if (result.success) {
-        setSuccess('¡Vehículo creado exitosamente!');
-        await loadVehicles();
+        setSuccess('¡Tarea agregada exitosamente!');
+        await loadValoraciones();
+        
+        // Actualizar la valoración seleccionada
+        const updatedValoracion = await valoracionService.getValoracionById(selectedValoracion.id);
+        if (updatedValoracion.success && updatedValoracion.data) {
+          setSelectedValoracion(updatedValoracion.data);
+        }
+
         setTimeout(() => {
-          handleCloseVehicleModal();
-        }, 2000);
+          handleCloseTareaModal();
+        }, 1500);
       } else {
         setError(result.message);
       }
     } catch (err) {
-      setError('Error al crear el vehículo. Intenta de nuevo.');
+      setError('Error al agregar tarea. Intenta de nuevo.');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleDeleteVehicle = async (vehicleId: string) => {
-    if (!window.confirm('¿Estás seguro de eliminar este vehículo?')) {
-      return;
-    }
+  const handleDeleteTarea = async (tareaId: string) => {
+    if (!selectedValoracion) return;
+    if (!window.confirm('¿Estás seguro de eliminar esta tarea?')) return;
 
     try {
-      const result = await vehicleService.deleteVehicle(vehicleId);
+      const result = await valoracionService.removeTarea(selectedValoracion.id, tareaId);
       if (result.success) {
-        await loadVehicles();
-        setSuccess('Vehículo eliminado exitosamente');
+        setSuccess('Tarea eliminada exitosamente');
+        await loadValoraciones();
+        
+        // Actualizar la valoración seleccionada
+        const updatedValoracion = await valoracionService.getValoracionById(selectedValoracion.id);
+        if (updatedValoracion.success && updatedValoracion.data) {
+          setSelectedValoracion(updatedValoracion.data);
+        }
+
         setTimeout(() => setSuccess(null), 3000);
       } else {
         setError(result.message);
       }
     } catch (err) {
-      setError('Error al eliminar el vehículo');
+      setError('Error al eliminar tarea');
     }
   };
 
-  // Obtener nombre del cliente
-  const getClientName = (clientId: string) => {
-    const client = clients.find((c) => c.id === clientId);
-    return client ? client.nombre_completo : 'Desconocido';
+  const handleEnviarACliente = async () => {
+    if (!selectedValoracion) return;
+
+    if (!window.confirm('¿Enviar valoración al cliente para aprobación? Ya no podrás modificar las tareas.')) {
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const result = await valoracionService.enviarACliente(selectedValoracion.id);
+      if (result.success) {
+        setSuccess('¡Valoración enviada al cliente!');
+        await loadValoraciones();
+        handleCloseValoracionModal();
+      } else {
+        setError(result.message);
+      }
+    } catch (err) {
+      setError('Error al enviar valoración');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Helpers
+  const getVehicleInfo = (vehicleId: string) => {
+    const vehicle = vehicles.find((v) => v.id === vehicleId);
+    return vehicle ? `${vehicle.marca} ${vehicle.modelo} - ${vehicle.placa}` : 'Vehículo desconocido';
+  };
+
+  const getClientName = (vehicleId: string) => {
+    const vehicle = vehicles.find((v) => v.id === vehicleId);
+    if (!vehicle) return 'Cliente desconocido';
+    const client = clients.find((c) => c.id === vehicle.clienteId);
+    return client ? client.nombre_completo : 'Cliente desconocido';
+  };
+
+  const getEstadoColor = (estado: string) => {
+    switch (estado) {
+      case 'completada':
+        return 'success';
+      case 'en_proceso':
+        return 'warning';
+      case 'pendiente_aprobacion_cliente':
+        return 'info';
+      case 'pendiente':
+        return 'default';
+      default:
+        return 'default';
+    }
+  };
+
+  const getEstadoLabel = (estado: string) => {
+    switch (estado) {
+      case 'pendiente':
+        return 'Pendiente';
+      case 'en_proceso':
+        return 'En Proceso';
+      case 'completada':
+        return 'Completada';
+      case 'pendiente_aprobacion_cliente':
+        return 'Enviada al Cliente';
+      default:
+        return estado;
+    }
+  };
+
+  const calcularCostoTotal = (tareas: TareaValoracion[]) => {
+    if (!tareas || tareas.length === 0) return 0;
+    return tareas.reduce((sum, tarea) => sum + tarea.precioEstimado, 0);
   };
 
   return (
@@ -299,7 +301,7 @@ const MecanicoPage = () => {
       {/* Header */}
       <Paper sx={{ p: 4, mb: 4, backgroundColor: 'info.main', color: 'white' }}>
         <Typography variant="h3" gutterBottom>
-          Panel del Mecánico
+          🔧 Panel del Mecánico
         </Typography>
         <Typography variant="h5">Bienvenido, {user?.nombre_completo}</Typography>
         <Typography variant="body1" sx={{ mt: 2 }}>
@@ -312,219 +314,258 @@ const MecanicoPage = () => {
 
       {/* Mensajes */}
       {success && (
-        <Alert severity="success" sx={{ mb: 2 }}>
+        <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccess(null)}>
           {success}
         </Alert>
       )}
       {error && (
-        <Alert severity="error" sx={{ mb: 2 }}>
+        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
           {error}
         </Alert>
       )}
 
-      <Typography variant="h4" gutterBottom sx={{ mt: 4 }}>
-        Mis Funciones:
-      </Typography>
-
-      {/* Grid de Tarjetas */}
-      <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', mt: 3 }}>
-        <Paper sx={{ p: 3, flex: 1, minWidth: 250 }}>
-          <CarRepair sx={{ fontSize: 50, color: 'primary.main', mb: 2 }} />
-          <Typography variant="h6" gutterBottom>
-            Mis Trabajos Asignados
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Ver y gestionar reparaciones asignadas a ti
-          </Typography>
-          <Box sx={{ mt: 2 }}>
-            <Chip label="3 trabajos pendientes" color="primary" sx={{ mr: 1 }} />
-            <Chip label="1 en progreso" color="warning" />
-          </Box>
-          <Button variant="outlined" sx={{ mt: 2 }}>
-            Ver Trabajos
-          </Button>
-        </Paper>
-
-        <Paper sx={{ p: 3, flex: 1, minWidth: 250 }}>
-          <Schedule sx={{ fontSize: 50, color: 'secondary.main', mb: 2 }} />
-          <Typography variant="h6" gutterBottom>
-            Agenda y Horarios
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Organizar tu tiempo y ver próximas asignaciones
-          </Typography>
-          <Button variant="outlined" sx={{ mt: 2 }}>
-            Ver Agenda
-          </Button>
-        </Paper>
-
-        <Paper sx={{ p: 3, flex: 1, minWidth: 250 }}>
-          <DirectionsCar sx={{ fontSize: 50, color: 'success.main', mb: 2 }} />
-          <Typography variant="h6" gutterBottom>
-            Gestión de Vehículos
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Agregar clientes y sus vehículos al sistema
-          </Typography>
-          <Box sx={{ mt: 2, display: 'flex', gap: 1, flexDirection: 'column' }}>
-            <Button variant="contained" onClick={handleOpenClientModal} startIcon={<Add />}>
-              Agregar Cliente
-            </Button>
-            <Button variant="outlined" onClick={handleOpenVehicleModal} startIcon={<Add />}>
-              Agregar Vehículo
-            </Button>
-          </Box>
-        </Paper>
-
-        <Paper sx={{ p: 3, flex: 1, minWidth: 250 }}>
-          <Inventory sx={{ fontSize: 50, color: 'warning.main', mb: 2 }} />
-          <Typography variant="h6" gutterBottom>
-            Herramientas y Repuestos
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Solicitar herramientas y repuestos necesarios
-          </Typography>
-          <Button variant="outlined" sx={{ mt: 2 }}>
-            Solicitar Materiales
-          </Button>
-        </Paper>
-      </Box>
-
-      {/* Tabs para Clientes y Vehículos */}
-      <Paper sx={{ mt: 4 }}>
+      {/* Tabs */}
+      <Paper sx={{ mb: 4 }}>
         <Tabs value={currentTab} onChange={(e, newValue) => setCurrentTab(newValue)}>
-          <Tab label={`Clientes (${clients.length})`} />
-          <Tab label={`Vehículos (${vehicles.length})`} />
+          <Tab label={`Valoraciones Asignadas (${valoraciones.length})`} />
+          <Tab label="Órdenes de Trabajo" />
         </Tabs>
 
-        {/* Tab 1: Clientes */}
+        {/* TAB 0: VALORACIONES */}
         {currentTab === 0 && (
           <Box sx={{ p: 3 }}>
+            <Typography variant="h6" gutterBottom>
+              Vehículos Asignados para Valoración
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+              Aquí puedes ver los vehículos que te han asignado para valorar. Crea una lista de tareas necesarias con su precio estimado.
+            </Typography>
+
             {loadingData ? (
               <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
                 <CircularProgress />
               </Box>
-            ) : clients.length === 0 ? (
-              <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', p: 3 }}>
-                No hay clientes registrados. Haz clic en "Agregar Cliente" para comenzar.
-              </Typography>
+            ) : valoraciones.length === 0 ? (
+              <Alert severity="info">
+                No tienes valoraciones asignadas en este momento.
+              </Alert>
             ) : (
-              <TableContainer>
-                <Table>
-                  <TableHead>
-                    <TableRow>
-                      <TableCell><strong>Nombre</strong></TableCell>
-                      <TableCell><strong>Cédula</strong></TableCell>
-                      <TableCell><strong>Email</strong></TableCell>
-                      <TableCell><strong>Teléfono</strong></TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {clients.map((client) => (
-                      <TableRow key={client.id}>
-                        <TableCell>{client.nombre_completo}</TableCell>
-                        <TableCell>{client.cedula}</TableCell>
-                        <TableCell>{client.email}</TableCell>
-                        <TableCell>{client.phone || '-'}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </TableContainer>
+              <Grid container spacing={3}>
+                {valoraciones.map((valoracion) => (
+                  <Grid item xs={12} md={6} lg={4} key={valoracion.id}>
+                    <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+                      <CardContent sx={{ flexGrow: 1 }}>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
+                          <Typography variant="h6" component="div">
+                            🚗 {getVehicleInfo(valoracion.vehiculoId)}
+                          </Typography>
+                          <Chip
+                            label={getEstadoLabel(valoracion.estado)}
+                            color={getEstadoColor(valoracion.estado)}
+                            size="small"
+                          />
+                        </Box>
+
+                        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                          <strong>Cliente:</strong> {getClientName(valoracion.vehiculoId)}
+                        </Typography>
+
+                        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                          <strong>Fecha Asignación:</strong>{' '}
+                          {new Date(valoracion.fechaAsignacion).toLocaleDateString()}
+                        </Typography>
+
+                        <Divider sx={{ my: 2 }} />
+
+                        <Typography variant="body2" sx={{ mb: 1 }}>
+                          <strong>Tareas propuestas:</strong> {valoracion.tareas?.length || 0}
+                        </Typography>
+
+                        {valoracion.tareas && valoracion.tareas.length > 0 && (
+                          <Typography variant="body2" color="primary.main" sx={{ fontWeight: 'bold' }}>
+                            Costo estimado: ₡{calcularCostoTotal(valoracion.tareas).toLocaleString()}
+                          </Typography>
+                        )}
+
+                        {valoracion.estadoCliente && valoracion.estadoCliente !== 'pendiente_revision' && (
+                          <Box sx={{ mt: 2 }}>
+                            <Chip
+                              label={
+                                valoracion.estadoCliente === 'totalmente_aceptada'
+                                  ? '✅ Cliente aceptó todas las tareas'
+                                  : valoracion.estadoCliente === 'parcialmente_aceptada'
+                                  ? '⚠️ Cliente aceptó algunas tareas'
+                                  : '❌ Cliente rechazó las tareas'
+                              }
+                              color={
+                                valoracion.estadoCliente === 'totalmente_aceptada'
+                                  ? 'success'
+                                  : valoracion.estadoCliente === 'parcialmente_aceptada'
+                                  ? 'warning'
+                                  : 'error'
+                              }
+                              size="small"
+                            />
+                          </Box>
+                        )}
+                      </CardContent>
+
+                      <CardActions>
+                        <Button
+                          size="small"
+                          variant="contained"
+                          startIcon={<Visibility />}
+                          onClick={() => handleOpenValoracion(valoracion)}
+                          fullWidth
+                        >
+                          Ver / Editar Tareas
+                        </Button>
+                      </CardActions>
+                    </Card>
+                  </Grid>
+                ))}
+              </Grid>
             )}
           </Box>
         )}
 
-        {/* Tab 2: Vehículos */}
+        {/* TAB 1: ÓRDENES DE TRABAJO */}
         {currentTab === 1 && (
           <Box sx={{ p: 3 }}>
-            {loadingData ? (
-              <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
-                <CircularProgress />
-              </Box>
-            ) : vehicles.length === 0 ? (
-              <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', p: 3 }}>
-                No hay vehículos registrados. Haz clic en "Agregar Vehículo" para comenzar.
+            <Typography variant="h6" gutterBottom>
+              Mis Órdenes de Trabajo
+            </Typography>
+            <Alert severity="info" sx={{ mt: 2 }}>
+              Próximamente: Aquí verás las órdenes de trabajo que te asignen después de que el cliente apruebe las tareas.
+            </Alert>
+          </Box>
+        )}
+      </Paper>
+
+      {/* MODAL: DETALLES DE VALORACIÓN */}
+      <Dialog
+        open={openValoracionModal}
+        onClose={handleCloseValoracionModal}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography variant="h6">
+              Valoración: {selectedValoracion && getVehicleInfo(selectedValoracion.vehiculoId)}
+            </Typography>
+            {selectedValoracion && (
+              <Chip
+                label={getEstadoLabel(selectedValoracion.estado)}
+                color={getEstadoColor(selectedValoracion.estado)}
+              />
+            )}
+          </Box>
+        </DialogTitle>
+
+        <DialogContent>
+          {selectedValoracion && (
+            <>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                <strong>Cliente:</strong> {getClientName(selectedValoracion.vehiculoId)}
               </Typography>
-            ) : (
-              <TableContainer>
-                <Table>
-                  <TableHead>
-                    <TableRow>
-                      <TableCell><strong>Placa</strong></TableCell>
-                      <TableCell><strong>Marca</strong></TableCell>
-                      <TableCell><strong>Modelo</strong></TableCell>
-                      <TableCell><strong>Año</strong></TableCell>
-                      <TableCell><strong>Cliente</strong></TableCell>
-                      <TableCell><strong>Trabajos</strong></TableCell>
-                      <TableCell align="center"><strong>Acciones</strong></TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {vehicles.map((vehicle) => (
-                      <TableRow key={vehicle.id}>
-                        <TableCell>{vehicle.placa}</TableCell>
-                        <TableCell>{vehicle.marca}</TableCell>
-                        <TableCell>{vehicle.modelo}</TableCell>
-                        <TableCell>{vehicle.año}</TableCell>
-                        <TableCell>{getClientName(vehicle.clienteId)}</TableCell>
-                        <TableCell>{vehicle.trabajos?.length || 0}</TableCell>
-                        <TableCell align="center">
+
+              <Divider sx={{ my: 2 }} />
+
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                <Typography variant="h6">Lista de Tareas</Typography>
+                {selectedValoracion.estado !== 'pendiente_aprobacion_cliente' && (
+                  <Button
+                    variant="contained"
+                    startIcon={<Add />}
+                    onClick={handleOpenTareaModal}
+                    size="small"
+                  >
+                    Agregar Tarea
+                  </Button>
+                )}
+              </Box>
+
+              {selectedValoracion.tareas && selectedValoracion.tareas.length === 0 ? (
+                <Alert severity="info">
+                  No hay tareas agregadas. Haz clic en "Agregar Tarea" para comenzar.
+                </Alert>
+              ) : (
+                <List>
+                  {selectedValoracion.tareas?.map((tarea, index) => (
+                    <Paper key={tarea.id} sx={{ p: 2, mb: 2 }}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
+                        <Box sx={{ flex: 1 }}>
+                          <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
+                            {index + 1}. {tarea.nombre}
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                            {tarea.descripcion}
+                          </Typography>
+                          <Typography variant="body1" color="primary.main" sx={{ mt: 1, fontWeight: 'bold' }}>
+                            Precio estimado: ₡{tarea.precioEstimado.toLocaleString()}
+                          </Typography>
+                          {tarea.estado !== 'propuesta' && (
+                            <Chip
+                              label={
+                                tarea.estado === 'aceptada'
+                                  ? '✅ Aceptada por cliente'
+                                  : '❌ Rechazada por cliente'
+                              }
+                              color={tarea.estado === 'aceptada' ? 'success' : 'error'}
+                              size="small"
+                              sx={{ mt: 1 }}
+                            />
+                          )}
+                        </Box>
+                        {selectedValoracion.estado !== 'pendiente_aprobacion_cliente' && (
                           <IconButton
                             color="error"
-                            onClick={() => handleDeleteVehicle(vehicle.id)}
+                            onClick={() => handleDeleteTarea(tarea.id)}
                             size="small"
                           >
                             <Delete />
                           </IconButton>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </TableContainer>
-            )}
-          </Box>
-        )}
-      </Paper>
+                        )}
+                      </Box>
+                    </Paper>
+                  ))}
+                </List>
+              )}
 
-      {/* Estadísticas */}
-      <Paper sx={{ p: 3, mt: 4, backgroundColor: '#f5f5f5' }}>
-        <Typography variant="h6" gutterBottom>
-          Mi Rendimiento:
-        </Typography>
-        <Box sx={{ display: 'flex', gap: 3, mt: 2 }}>
-          <Box>
-            <Typography variant="body2" color="text.secondary">
-              Trabajos Completados
-            </Typography>
-            <Typography variant="h4">156</Typography>
-          </Box>
-          <Box>
-            <Typography variant="body2" color="text.secondary">
-              Eficiencia
-            </Typography>
-            <Typography variant="h4">92%</Typography>
-          </Box>
-          <Box>
-            <Typography variant="body2" color="text.secondary">
-              Horas Trabajadas (Mes)
-            </Typography>
-            <Typography variant="h4">168h</Typography>
-          </Box>
-          <Box>
-            <Typography variant="body2" color="text.secondary">
-              Satisfacción Clientes
-            </Typography>
-            <Typography variant="h4">4.8/5</Typography>
-          </Box>
-        </Box>
-      </Paper>
+              {selectedValoracion.tareas && selectedValoracion.tareas.length > 0 && (
+                <Paper sx={{ p: 2, mt: 2, backgroundColor: '#f5f5f5' }}>
+                  <Typography variant="h6">
+                    Costo Total Estimado: ₡{calcularCostoTotal(selectedValoracion.tareas).toLocaleString()}
+                  </Typography>
+                </Paper>
+              )}
+            </>
+          )}
+        </DialogContent>
 
-      {/* Modal: Agregar Cliente */}
-      <Dialog open={openClientModal} onClose={handleCloseClientModal} maxWidth="md" fullWidth>
-        <DialogTitle>Agregar Nuevo Cliente</DialogTitle>
-        <form onSubmit={handleSubmitClient}>
+        <DialogActions>
+          <Button onClick={handleCloseValoracionModal}>Cerrar</Button>
+          {selectedValoracion && 
+           selectedValoracion.estado !== 'pendiente_aprobacion_cliente' && 
+           selectedValoracion.tareas && 
+           selectedValoracion.tareas.length > 0 && (
+            <Button
+              variant="contained"
+              startIcon={<Send />}
+              onClick={handleEnviarACliente}
+              disabled={loading}
+            >
+              {loading ? 'Enviando...' : 'Enviar al Cliente'}
+            </Button>
+          )}
+        </DialogActions>
+      </Dialog>
+
+      {/* MODAL: AGREGAR TAREA */}
+      <Dialog open={openTareaModal} onClose={handleCloseTareaModal} maxWidth="sm" fullWidth>
+        <DialogTitle>Agregar Nueva Tarea</DialogTitle>
+        <form onSubmit={handleSubmitTarea}>
           <DialogContent>
             {error && (
               <Alert severity="error" sx={{ mb: 2 }}>
@@ -537,140 +578,43 @@ const MecanicoPage = () => {
               </Alert>
             )}
 
-            <Typography variant="h6" gutterBottom>
-              Información del Cliente
-            </Typography>
-
             <TextField
               fullWidth
-              label="Cédula"
-              name="cedula"
-              value={clientFormData.cedula}
-              onChange={handleClientInputChange}
+              label="Nombre de la Tarea"
+              name="nombre"
+              value={tareaFormData.nombre}
+              onChange={handleTareaInputChange}
               required
+              placeholder="Ej: Cambio de aceite"
               sx={{ mb: 2 }}
             />
 
             <TextField
               fullWidth
-              label="Nombre Completo"
-              name="nombre_completo"
-              value={clientFormData.nombre_completo}
-              onChange={handleClientInputChange}
+              label="Descripción"
+              name="descripcion"
+              value={tareaFormData.descripcion}
+              onChange={handleTareaInputChange}
               required
+              multiline
+              rows={3}
+              placeholder="Describe detalladamente el trabajo a realizar..."
               sx={{ mb: 2 }}
             />
 
             <TextField
               fullWidth
-              label="Correo Electrónico"
-              name="email"
-              type="email"
-              value={clientFormData.email}
-              onChange={handleClientInputChange}
+              label="Precio Estimado (₡)"
+              name="precioEstimado"
+              type="number"
+              value={tareaFormData.precioEstimado}
+              onChange={handleTareaInputChange}
               required
-              sx={{ mb: 2 }}
+              InputProps={{ inputProps: { min: 0, step: 100 } }}
             />
-
-            <TextField
-              fullWidth
-              label="Contraseña"
-              name="password"
-              type="password"
-              value={clientFormData.password}
-              onChange={handleClientInputChange}
-              required
-              sx={{ mb: 2 }}
-            />
-
-            <TextField
-              fullWidth
-              label="Teléfono (opcional)"
-              name="phone"
-              value={clientFormData.phone}
-              onChange={handleClientInputChange}
-              sx={{ mb: 2 }}
-            />
-
-            <TextField
-              fullWidth
-              label="Dirección (opcional)"
-              name="address"
-              value={clientFormData.address}
-              onChange={handleClientInputChange}
-              sx={{ mb: 2 }}
-            />
-
-            <Divider sx={{ my: 3 }} />
-
-            <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-              <input
-                type="checkbox"
-                id="addVehicleCheckbox"
-                checked={addVehicle}
-                onChange={(e) => setAddVehicle(e.target.checked)}
-                style={{ marginRight: '8px' }}
-              />
-              <label htmlFor="addVehicleCheckbox">
-                <Typography variant="body1">¿Agregar vehículo del cliente ahora?</Typography>
-              </label>
-            </Box>
-
-            {addVehicle && (
-              <>
-                <Typography variant="h6" gutterBottom>
-                  Información del Vehículo (Opcional)
-                </Typography>
-
-                <TextField
-                  fullWidth
-                  label="Placa"
-                  name="vehiculo.placa"
-                  value={clientFormData.vehiculo?.placa || ''}
-                  onChange={handleClientInputChange}
-                  sx={{ mb: 2 }}
-                />
-
-                <TextField
-                  fullWidth
-                  label="Marca"
-                  name="vehiculo.marca"
-                  value={clientFormData.vehiculo?.marca || ''}
-                  onChange={handleClientInputChange}
-                  sx={{ mb: 2 }}
-                />
-
-                <TextField
-                  fullWidth
-                  label="Modelo"
-                  name="vehiculo.modelo"
-                  value={clientFormData.vehiculo?.modelo || ''}
-                  onChange={handleClientInputChange}
-                  sx={{ mb: 2 }}
-                />
-
-                <TextField
-                  fullWidth
-                  label="Año"
-                  name="vehiculo.año"
-                  type="number"
-                  value={clientFormData.vehiculo?.año || new Date().getFullYear()}
-                  onChange={handleClientInputChange}
-                  sx={{ mb: 2 }}
-                />
-
-                <TextField
-                  fullWidth
-                  label="Color (opcional)"
-                  name="vehiculo.color"
-                  value={clientFormData.vehiculo?.color || ''}
-                  onChange={handleClientInputChange}
-                />
-              </>
-            )}
           </DialogContent>
           <DialogActions>
-            <Button onClick={handleCloseClientModal} disabled={loading}>
+            <Button onClick={handleCloseTareaModal} disabled={loading}>
               Cancelar
             </Button>
             <Button
@@ -679,122 +623,7 @@ const MecanicoPage = () => {
               disabled={loading}
               startIcon={loading && <CircularProgress size={20} />}
             >
-              {loading ? 'Creando...' : 'Crear Cliente'}
-            </Button>
-          </DialogActions>
-        </form>
-      </Dialog>
-
-      {/* Modal: Agregar Vehículo */}
-      {/* Modal: Agregar Vehículo */}
-      <Dialog open={openVehicleModal} onClose={handleCloseVehicleModal} maxWidth="sm" fullWidth>
-        <DialogTitle>Agregar Nuevo Vehículo</DialogTitle>
-        <form onSubmit={handleSubmitVehicle}>
-          <DialogContent>
-            {error && (
-              <Alert severity="error" sx={{ mb: 2 }}>
-                {error}
-              </Alert>
-            )}
-            {success && (
-                <Alert severity="success" sx={{ mb: 2 }}>
-                  {success}
-                </Alert>
-              )}
-
-              {/* Autocomplete para seleccionar cliente */}
-              <Autocomplete
-                options={clients}
-                getOptionLabel={(option) => `${option.nombre_completo} - ${option.cedula}`}
-                value={clients.find((c) => c.id === vehicleFormData.clienteId) || null}
-                onChange={(event, newValue) => {
-                  setVehicleFormData((prev) => ({
-                    ...prev,
-                    clienteId: newValue ? newValue.id : '',
-                  }));
-                }}
-                renderInput={(params) => (
-                  <TextField
-                    {...params}
-                    label="Cliente"
-                    required
-                    placeholder="Escribe para buscar..."
-                  />
-                )}
-                renderOption={(props, option) => (
-                  <li {...props} key={option.id}>
-                    <Box>
-                      <Typography variant="body1">{option.nombre_completo}</Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        Cédula: {option.cedula} | Email: {option.email}
-                      </Typography>
-                    </Box>
-                  </li>
-                )}
-                noOptionsText="No se encontraron clientes"
-                sx={{ mb: 2 }}
-              />
-
-              <TextField
-                fullWidth
-                label="Placa"
-                name="placa"
-                value={vehicleFormData.placa}
-                onChange={handleVehicleInputChange}
-                required
-                sx={{ mb: 2 }}
-              />
-
-              <TextField
-                fullWidth
-                label="Marca"
-                name="marca"
-                value={vehicleFormData.marca}
-                onChange={handleVehicleInputChange}
-                required
-                sx={{ mb: 2 }}
-              />
-
-              <TextField
-                fullWidth
-                label="Modelo"
-                name="modelo"
-                value={vehicleFormData.modelo}
-                onChange={handleVehicleInputChange}
-                required
-                sx={{ mb: 2 }}
-              />
-
-              <TextField
-                fullWidth
-                label="Año"
-                name="año"
-                type="number"
-                value={vehicleFormData.año}
-                onChange={handleVehicleInputChange}
-                required
-                sx={{ mb: 2 }}
-              />
-
-              <TextField
-                fullWidth
-                label="Color (opcional)"
-                name="color"
-                value={vehicleFormData.color}
-                onChange={handleVehicleInputChange}
-              />
-            </DialogContent>
-            <DialogActions>
-              <Button onClick={handleCloseVehicleModal} disabled={loading}>
-                Cancelar
-              </Button>
-              <Button
-                type="submit"
-                variant="contained"
-                disabled={loading}
-                startIcon={loading && <CircularProgress size={20} />}
-              >
-                {loading ? 'Creando...' : 'Crear Vehículo'}
+              {loading ? 'Agregando...' : 'Agregar Tarea'}
             </Button>
           </DialogActions>
         </form>

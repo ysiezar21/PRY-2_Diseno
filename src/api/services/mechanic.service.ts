@@ -3,6 +3,7 @@
 import {
   collection,
   doc,
+  getDoc,
   getDocs,
   deleteDoc,
   query,
@@ -66,10 +67,9 @@ class MechanicService {
       }
 
       // 3. Verificar que el taller existe
-      const workshopDoc = await doc(db, 'workshops', workshopId);
-      const workshopSnapshot = await workshopDoc.get();
+      const workshopDoc = await getDoc(doc(db, 'workshops', workshopId));
       
-      if (!workshopSnapshot.exists()) {
+      if (!workshopDoc.exists()) {
         return {
           success: false,
           message: 'Taller no encontrado',
@@ -184,17 +184,16 @@ class MechanicService {
   async deleteMechanic(mechanicId: string): Promise<ApiResponse> {
     try {
       // Verificar que el usuario existe y es mecánico
-      const mechanicDoc = await doc(db, 'users', mechanicId);
-      const mechanicSnapshot = await mechanicDoc.get();
+      const mechanicDoc = await getDoc(doc(db, 'users', mechanicId));
 
-      if (!mechanicSnapshot.exists()) {
+      if (!mechanicDoc.exists()) {
         return {
           success: false,
           message: 'Mecánico no encontrado',
         };
       }
 
-      const mechanicData = mechanicSnapshot.data();
+      const mechanicData = mechanicDoc.data();
       
       if (mechanicData?.role !== 'mechanic') {
         return {

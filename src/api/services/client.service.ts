@@ -3,7 +3,10 @@
 import {
   collection,
   doc,
+  setDoc,
+  getDoc,
   getDocs,
+  updateDoc,
   deleteDoc,
   query,
   where,
@@ -25,30 +28,18 @@ export interface CreateClientData {
   address?: string;
 }
 
-export interface CreateVehicleData {
-  placa: string;
-  marca: string;
-  modelo: string;
-  año: number;
-  color?: string;
-  clienteId?: string;
-}
-
 export interface CreateClientWithVehicleData {
   // Datos del cliente
-  cedula: string;
-  nombre_completo: string;
-  email: string;
-  password: string;
-  phone?: string;
-  address?: string;
-  // Datos del vehículo (opcionales)
-  vehiculo?: {
+  cliente: CreateClientData;
+  // Datos del vehículo
+  vehiculo: {
     placa: string;
     marca: string;
     modelo: string;
     año: number;
     color?: string;
+    vin?: string;
+    kilometraje?: number;
   };
 }
 
@@ -65,33 +56,27 @@ export interface ApiResponse<T = any> {
 
 class ClientService {
   /**
-   * Crea un nuevo cliente (con o sin vehículo)
+   * Crear un nuevo cliente (solo cliente, sin vehículo)
    */
-  async createClient(data: CreateClientWithVehicleData): Promise<ApiResponse<any>> {
+  async createClient(
+    data: CreateClientData,
+    workshopId: string
+  ): Promise<ApiResponse> {
     try {
-      const { cedula, nombre_completo, email, password, phone, address, vehiculo } = data;
+      const { cedula, nombre_completo, email, password, phone, address } = data;
 
-      // 1. Validar campos requeridos
-      if (!cedula || !nombre_completo || !email || !password) {
-        return {
-          success: false,
-          message: 'Faltan campos requeridos del cliente',
-          error: 'MISSING_FIELDS',
-        };
-      }
-
-      // 2. Verificar que el email no esté en uso
+      // Verificar si el email ya existe
       const emailExists = await authService.emailExists(email);
       if (emailExists) {
         return {
           success: false,
-          message: 'Ya existe un usuario con ese correo electrónico',
-          error: 'DUPLICATE_EMAIL',
+          message: 'Este correo electrónico ya está registrado',
+          error: 'EMAIL_EXISTS',
         };
       }
 
-      // 3. Crear el usuario cliente en Firebase Auth y Firestore
-      const userResult = await authService.createUserAccount(email, password, {
+      // Crear usuario en Firebase Auth y Firestore
+      const result = await authService.createUserAccount(email, password, {
         cedula,
         nombre_completo,
         email,
@@ -100,67 +85,96 @@ class ClientService {
         address,
       });
 
-      if (!userResult.success || !userResult.data) {
-        return {
-          success: false,
-          message: userResult.message,
-          error: userResult.error,
-        };
+      if (!result.success) {
+        return result;
       }
 
-      const newClient = userResult.data;
-
-      console.log('✅ Cliente creado en Firebase:', newClient.nombre_completo);
-
-      let newVehicle = null;
-
-      // 4. Si se proporcionó información del vehículo, crearlo
-      if (vehiculo && vehiculo.placa && vehiculo.marca && vehiculo.modelo) {
-        const vehicleResult = await vehicleService.createVehicle({
-          ...vehiculo,
-          clienteId: newClient.id,
-        });
-
-        if (vehicleResult.success && vehicleResult.data) {
-          newVehicle = vehicleResult.data;
-          console.log('✅ Vehículo también creado:', newVehicle.placa);
-        }
-      }
+      console.log('✅ Cliente creado:', email);
 
       return {
         success: true,
-        message: newVehicle
-          ? 'Cliente y vehículo creados exitosamente'
-          : 'Cliente creado exitosamente',
-        data: {
-          client: newClient,
-          vehicle: newVehicle,
-        },
+        message: 'Cliente registrado exitosamente',
+        data: result.data,
       };
     } catch (error: any) {
       console.error('❌ Error creando cliente:', error);
       return {
         success: false,
-        message: 'Error de conexión',
-        error: error.message || 'NETWORK_ERROR',
+        message: 'Error al crear cliente',
+        error: error.message || 'SERVER_ERROR',
       };
     }
   }
 
   /**
-   * Obtiene todos los clientes
+   * ✨ NUEVO: Crear cliente CON vehículo en una sola operación
+   */
+  async createClientWithVehicle(
+    data: CreateClientWithVehicleData,
+    workshopId: string,
+    tallerOwnerId: string
+  ): Promise<ApiResponse> {
+    try {
+      // 1. Crear el cliente primero
+      const clientResult = await this.createClient(data.cliente, workshopId);
+
+      if (!clientResult.success || !clientResult.data) {
+        return clientResult;
+      }
+
+      const clienteId = clientResult.data.id;
+
+      // 2. Crear el vehículo asociado al cliente
+      const vehicleResult = await vehicleService.createVehicle({
+        ...data.vehiculo,
+        clienteId,
+        workshopId,
+        tallerOwnerId,
+      });
+
+      if (!vehicleResult.success) {
+        // Si falla el vehículo, consideramos que al menos el cliente se creó
+        return {
+          success: true,
+          message: 'Cliente creado, pero hubo un error al crear el vehículo. Puede agregarlo manualmente.',
+          data: {
+            cliente: clientResult.data,
+            vehiculo: null,
+          },
+        };
+      }
+
+      console.log('✅ Cliente y vehículo creados:', data.cliente.email);
+
+      return {
+        success: true,
+        message: 'Cliente y vehículo registrados exitosamente',
+        data: {
+          cliente: clientResult.data,
+          vehiculo: vehicleResult.data,
+        },
+      };
+    } catch (error: any) {
+      console.error('❌ Error creando cliente con vehículo:', error);
+      return {
+        success: false,
+        message: 'Error al crear cliente y vehículo',
+        error: error.message || 'SERVER_ERROR',
+      };
+    }
+  }
+
+  /**
+   * Obtener todos los clientes
    */
   async getAllClients(): Promise<ApiResponse<any[]>> {
     try {
-      const clientsQuery = query(
-        collection(db, 'users'),
-        where('role', '==', 'client')
+      const usersSnapshot = await getDocs(
+        query(collection(db, 'users'), where('role', '==', 'client'))
       );
 
-      const clientsSnapshot = await getDocs(clientsQuery);
       const clients: any[] = [];
-
-      clientsSnapshot.forEach((doc) => {
+      usersSnapshot.forEach((doc) => {
         clients.push({ id: doc.id, ...doc.data() });
       });
 
@@ -180,41 +194,77 @@ class ClientService {
   }
 
   /**
-   * Elimina un cliente
+   * Obtener un cliente por ID
    */
-  async deleteClient(clientId: string): Promise<ApiResponse> {
+  async getClientById(clientId: string): Promise<ApiResponse> {
     try {
-      // Verificar que el usuario existe y es cliente
-      const clientDoc = await doc(db, 'users', clientId);
-      const clientSnapshot = await clientDoc.get();
+      const clientDoc = await getDoc(doc(db, 'users', clientId));
 
-      if (!clientSnapshot.exists()) {
+      if (!clientDoc.exists() || clientDoc.data()?.role !== 'client') {
         return {
           success: false,
           message: 'Cliente no encontrado',
         };
       }
 
-      const clientData = clientSnapshot.data();
+      return {
+        success: true,
+        message: 'Cliente encontrado',
+        data: { id: clientDoc.id, ...clientDoc.data() },
+      };
+    } catch (error) {
+      console.error('❌ Error obteniendo cliente:', error);
+      return {
+        success: false,
+        message: 'Error al obtener cliente',
+      };
+    }
+  }
 
-      if (clientData?.role !== 'client') {
+  /**
+   * Actualizar información del cliente
+   */
+  async updateClient(clientId: string, data: any): Promise<ApiResponse> {
+    try {
+      await updateDoc(doc(db, 'users', clientId), {
+        ...data,
+        updatedAt: new Date().toISOString(),
+      });
+
+      console.log('✅ Cliente actualizado:', clientId);
+
+      return {
+        success: true,
+        message: 'Cliente actualizado exitosamente',
+      };
+    } catch (error) {
+      console.error('❌ Error actualizando cliente:', error);
+      return {
+        success: false,
+        message: 'Error al actualizar cliente',
+      };
+    }
+  }
+
+  /**
+   * Eliminar un cliente
+   */
+  async deleteClient(clientId: string): Promise<ApiResponse> {
+    try {
+      // Verificar si el cliente tiene vehículos
+      const vehiclesResult = await vehicleService.getVehiclesByClient(clientId);
+      
+      if (vehiclesResult.success && vehiclesResult.data && vehiclesResult.data.length > 0) {
         return {
           success: false,
-          message: 'El usuario no es un cliente',
+          message: 'No se puede eliminar el cliente porque tiene vehículos registrados',
+          error: 'HAS_VEHICLES',
         };
       }
 
-      // Eliminar el documento del cliente
       await deleteDoc(doc(db, 'users', clientId));
 
-      console.log('✅ Cliente eliminado:', clientData.nombre_completo);
-
-      // Nota: Podrías también eliminar los vehículos del cliente aquí si lo deseas
-      // const vehiclesQuery = query(collection(db, 'vehicles'), where('clienteId', '==', clientId));
-      // const vehiclesSnapshot = await getDocs(vehiclesQuery);
-      // vehiclesSnapshot.forEach(async (doc) => {
-      //   await deleteDoc(doc.ref);
-      // });
+      console.log('✅ Cliente eliminado:', clientId);
 
       return {
         success: true,

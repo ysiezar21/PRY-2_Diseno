@@ -1,5 +1,4 @@
 // src/routes/AppRouter.tsx
-
 // ============================================
 // CONFIGURACIÓN DE RUTAS DE LA APLICACIÓN
 // ============================================
@@ -25,6 +24,22 @@ const MecanicoPage = lazy(() => import('../pages/MecanicoPage'));
 const ClientePage = lazy(() => import('../pages/ClientePage'));
 
 // ============================================
+// COMPONENTE: Pantalla de Carga
+// ============================================
+// Muestra un spinner mientras se carga la aplicación
+const LoadingScreen = () => (
+  <Box 
+    display="flex" 
+    justifyContent="center" 
+    alignItems="center" 
+    minHeight="100vh"
+    sx={{ backgroundColor: '#f5f5f5' }}
+  >
+    <CircularProgress size={60} />
+  </Box>
+);
+
+// ============================================
 // COMPONENTE: Ruta Protegida
 // ============================================
 // Envuelve rutas que requieren autenticación
@@ -35,11 +50,7 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 
   // Mientras se verifica la autenticación, muestra un spinner de carga
   if (loading) {
-    return (
-      <Box display="flex" justifyContent="center" alignItems="center" minHeight="100vh">
-        <CircularProgress />
-      </Box>
-    );
+    return <LoadingScreen />;
   }
 
   // Si el usuario NO está autenticado, redirige a la página de login
@@ -53,18 +64,57 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 };
 
 // ============================================
+// COMPONENTE: Ruta Pública (Login)
+// ============================================
+// Envuelve rutas públicas como login
+// Si el usuario ya está autenticado, lo redirige a su dashboard
+const PublicRoute = ({ children }: { children: React.ReactNode }) => {
+  const { isAuthenticated, loading, user } = useAuthContext();
+
+  // Mientras se verifica la autenticación, muestra un spinner de carga
+  if (loading) {
+    return <LoadingScreen />;
+  }
+
+  // Si el usuario YA está autenticado, redirige según su rol
+  if (isAuthenticated && user) {
+    // Redirigir según el rol del usuario
+    switch (user.role) {
+      case 'web_owner':
+        return <Navigate to="/admin" replace />;
+      case 'workshop_owner':
+        return <Navigate to="/taller" replace />;
+      case 'mechanic':
+        return <Navigate to="/mecanico" replace />;
+      case 'client':
+        return <Navigate to="/cliente" replace />;
+      default:
+        return <Navigate to="/dashboard" replace />;
+    }
+  }
+
+  // Si no está autenticado, muestra la página pública
+  return <>{children}</>;
+};
+
+// ============================================
 // COMPONENTE: Ruta por Rol
 // ============================================
 // Envuelve rutas que solo pueden acceder usuarios con un rol específico
 // Si el usuario no tiene el rol correcto, lo redirige al dashboard
 const RoleRoute = ({ role, children }: { role: string; children: React.ReactNode }) => {
   // Obtiene la información del usuario actual
-  const { user } = useAuthContext();
+  const { user, loading } = useAuthContext();
+
+  // Mientras se verifica, muestra loading
+  if (loading) {
+    return <LoadingScreen />;
+  }
 
   // Verifica si el rol del usuario coincide con el rol requerido para la ruta
   // Si NO coincide, redirige al usuario al dashboard principal
   if (user?.role !== role) {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/dashboard" replace />;
   }
 
   // Si el rol es correcto, muestra el contenido de la página
@@ -81,12 +131,7 @@ const AppRouter = () => {
     <BrowserRouter>
       
       {/* Suspense: Muestra un fallback mientras se cargan los componentes lazy */}
-      {/* El fallback es un spinner centrado que aparece durante la carga */}
-      <Suspense fallback={
-        <Box display="flex" justifyContent="center" alignItems="center" minHeight="100vh">
-          <CircularProgress />
-        </Box>
-      }>
+      <Suspense fallback={<LoadingScreen />}>
         
         {/* Routes: Contenedor de todas las rutas de la aplicación */}
         <Routes>
@@ -95,7 +140,11 @@ const AppRouter = () => {
           {/* RUTA PÚBLICA: Login */}
           {/* ============================================ */}
           {/* Página de inicio de sesión - accesible sin autenticación */}
-          <Route path="/login" element={<Login />} />
+          <Route path="/login" element={
+            <PublicRoute>
+              <Login />
+            </PublicRoute>
+          } />
           
           {/* ============================================ */}
           {/* RUTAS PROTEGIDAS: Requieren autenticación */}
@@ -118,7 +167,6 @@ const AppRouter = () => {
             {/* ============================================ */}
             
             {/* Página de Administrador - Solo accesible para web_owner */}
-            {/* Permite gestionar toda la plataforma, usuarios y talleres */}
             <Route path="admin" element={
               <RoleRoute role="web_owner">
                 <AdminPage />
@@ -126,7 +174,6 @@ const AppRouter = () => {
             } />
             
             {/* Página de Taller - Solo accesible para workshop_owner */}
-            {/* Permite gestionar su taller, mecánicos y reparaciones */}
             <Route path="taller" element={
               <RoleRoute role="workshop_owner">
                 <TallerPage />
@@ -134,7 +181,6 @@ const AppRouter = () => {
             } />
             
             {/* Página de Mecánico - Solo accesible para mechanic */}
-            {/* Permite ver y gestionar las reparaciones asignadas */}
             <Route path="mecanico" element={
               <RoleRoute role="mechanic">
                 <MecanicoPage />
@@ -142,7 +188,6 @@ const AppRouter = () => {
             } />
             
             {/* Página de Cliente - Solo accesible para client */}
-            {/* Permite solicitar reparaciones y ver el estado de sus vehículos */}
             <Route path="cliente" element={
               <RoleRoute role="client">
                 <ClientePage />
@@ -150,6 +195,12 @@ const AppRouter = () => {
             } />
             
           </Route>
+
+          {/* ============================================ */}
+          {/* RUTA DE FALLBACK: 404 */}
+          {/* ============================================ */}
+          <Route path="*" element={<Navigate to="/" replace />} />
+          
         </Routes>
       </Suspense>
     </BrowserRouter>
