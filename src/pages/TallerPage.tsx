@@ -629,78 +629,90 @@ const TallerPage = () => {
   };
 
   const handleCreateOrdenTrabajo = async () => {
-    if (!selectedValoracion || !mecanicoSeleccionado || !user?.id || !user?.workshopId) {
-      setError('Faltan datos necesarios');
-      return;
-    }
+  if (!selectedValoracion || !mecanicoSeleccionado || !user?.id || !user?.workshopId) {
+    setError('Faltan datos necesarios');
+    return;
+  }
 
-    setLoading(true);
-    setError(null);
+  setLoading(true);
+  setError(null);
 
-    try {
-      // Verificar si ya existe una OT para esta valoración
-      const ordenExistente = getOrdenByValoracionId(selectedValoracion.id);
+  try {
+    // Verificar si ya existe una OT para esta valoración
+    const ordenExistente = getOrdenByValoracionId(selectedValoracion.id);
 
-      if (ordenExistente) {
-        // Si existe OT pero está pendiente de asignación, asignar mecánico
-        if (ordenExistente.estado === 'pendiente_asignacion' && !ordenExistente.mecanicoAsignado) {
-          const result = await ordenTrabajoService.asignarMecanico(ordenExistente.id, {
-            mecanicoId: mecanicoSeleccionado,
-            prioridad,
-            observaciones,
-          });
+    if (ordenExistente) {
+      // Si existe OT pero está pendiente de asignación, asignar mecánico
+      if (ordenExistente.estado === 'pendiente_asignacion' && !ordenExistente.mecanicoAsignado) {
+        const result = await ordenTrabajoService.asignarMecanico(ordenExistente.id, {
+          mecanicoId: mecanicoSeleccionado,
+          prioridad,
+          observaciones,
+        });
 
-          if (result.success) {
-            setSuccess(`✅ Mecánico asignado a la orden ${ordenExistente.numeroOT}`);
-            await loadOrdenesTrabajo();
-            handleCloseCreateOTModal();
-            
-            setTimeout(() => {
-              setSuccess(null);
-              setCurrentTab(3);
-            }, 2000);
-          } else {
-            setError(result.message || 'Error al asignar mecánico');
-          }
+        if (result.success) {
+          setSuccess(`✅ Mecánico asignado a la orden ${ordenExistente.numeroOT}`);
+          
+          // ⭐ Recargar datos para actualizar la UI
+          await Promise.all([
+            loadOrdenesTrabajo(),
+            loadValoraciones() // Recargar valoraciones
+          ]);
+          
+          handleCloseCreateOTModal();
+          
+          setTimeout(() => {
+            setSuccess(null);
+            setCurrentTab(3);
+          }, 2000);
         } else {
-          setError('Esta orden ya tiene un mecánico asignado');
+          setError(result.message || 'Error al asignar mecánico');
         }
       } else {
-        // Si no existe OT, crear una automáticamente primero
-        // 1. Crear OT automática (sin mecánico asignado)
-        const resultAutomatica = await ordenTrabajoService.createOrdenAutomatica(selectedValoracion.id);
-
-        if (resultAutomatica.success && resultAutomatica.data) {
-          // 2. Asignar mecánico inmediatamente
-          const resultAsignacion = await ordenTrabajoService.asignarMecanico(resultAutomatica.data.id, {
-            mecanicoId: mecanicoSeleccionado,
-            prioridad,
-            observaciones,
-          });
-
-          if (resultAsignacion.success) {
-            setSuccess(`✅ Orden de trabajo ${resultAutomatica.data.numeroOT} creada y asignada al mecánico`);
-            await loadOrdenesTrabajo();
-            handleCloseCreateOTModal();
-            
-            setTimeout(() => {
-              setSuccess(null);
-              setCurrentTab(3);
-            }, 2000);
-          } else {
-            setError(`Orden creada pero error al asignar mecánico: ${resultAsignacion.message}`);
-          }
-        } else {
-          setError(resultAutomatica.message || 'Error al crear orden automática');
-        }
+        setError('Esta orden ya tiene un mecánico asignado');
       }
-    } catch (err: any) {
-      console.error('Error al procesar orden:', err);
-      setError(err.message || 'Error al procesar la orden de trabajo');
-    } finally {
-      setLoading(false);
+    } else {
+      // Si no existe OT, crear una automáticamente primero
+      // 1. Crear OT automática (sin mecánico asignado)
+      const resultAutomatica = await ordenTrabajoService.createOrdenAutomatica(selectedValoracion.id);
+
+      if (resultAutomatica.success && resultAutomatica.data) {
+        // 2. Asignar mecánico inmediatamente
+        const resultAsignacion = await ordenTrabajoService.asignarMecanico(resultAutomatica.data.id, {
+          mecanicoId: mecanicoSeleccionado,
+          prioridad,
+          observaciones,
+        });
+
+        if (resultAsignacion.success) {
+          setSuccess(`✅ Orden de trabajo ${resultAutomatica.data.numeroOT} creada y asignada al mecánico`);
+          
+          // ⭐ Recargar datos para actualizar la UI
+          await Promise.all([
+            loadOrdenesTrabajo(),
+            loadValoraciones() // Recargar valoraciones (la eliminada ya no aparecerá)
+          ]);
+          
+          handleCloseCreateOTModal();
+          
+          setTimeout(() => {
+            setSuccess(null);
+            setCurrentTab(3);
+          }, 2000);
+        } else {
+          setError(`Orden creada pero error al asignar mecánico: ${resultAsignacion.message}`);
+        }
+      } else {
+        setError(resultAutomatica.message || 'Error al crear orden automática');
+      }
     }
-  };
+  } catch (err: any) {
+    console.error('Error al procesar orden:', err);
+    setError(err.message || 'Error al procesar la orden de trabajo');
+  } finally {
+    setLoading(false);
+  }
+};
 
   // ========== CREAR ORDEN DE TRABAJO MANUAL (sin valoración) ==========
 
@@ -1401,12 +1413,14 @@ const TallerPage = () => {
                           <strong>Vehículo:</strong> {getVehicleInfo(ot.vehiculoId)}
                         </Typography>
 
-                        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                          <strong>Mecánico:</strong> {ot.mecanicoId ? getMechanicName(ot.mecanicoId) : 'Sin asignar'}
+                        <Box sx={{ mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <Typography variant="body2" color="text.secondary">
+                            <strong>Mecánico:</strong> {ot.mecanicoId ? getMechanicName(ot.mecanicoId) : 'Sin asignar'}
+                          </Typography>
                           {!ot.mecanicoAsignado && (
-                            <Chip label="Pendiente" size="small" color="warning" sx={{ ml: 1 }} />
+                            <Chip label="Pendiente" size="small" color="warning" />
                           )}
-                        </Typography>
+                        </Box>
 
                         <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
                           <strong>Fecha creación:</strong> {new Date(ot.fechaCreacion).toLocaleDateString()}

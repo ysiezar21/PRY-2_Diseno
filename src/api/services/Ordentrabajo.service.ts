@@ -141,31 +141,19 @@ class OrdenTrabajoService {
     return `${prefix}-${year}${month}-${nextNumber.toString().padStart(4, '0')}`;
   }
 
-  /**
-   * ⭐ CREAR OT AUTOMÁTICAMENTE cuando cliente completa selección de tareas
-   * Esta función es llamada automáticamente por el sistema cuando:
-   * - Cliente responde la ÚLTIMA tarea pendiente de una valoración
-   * - Al menos UNA tarea fue aceptada
-   */
-  async createOrdenAutomatica(
+/**
+ * ⭐ CREAR OT AUTOMÁTICAMENTE cuando cliente completa selección de tareas
+ * Esta función es llamada automáticamente por el sistema cuando:
+ * - Cliente responde la ÚLTIMA tarea pendiente de una valoración
+ * - Al menos UNA tarea fue aceptada
+ * - ELIMINA LA VALORACIÓN después de crear la OT exitosamente
+ */
+async createOrdenAutomatica(
   valoracionId: string
 ): Promise<ApiResponse<OrdenTrabajo>> {
   try {
     console.log('🤖 Intentando crear OT automática para valoración:', valoracionId);
-    const {
-      vehiculoId,
-      mecanicoId,
-      tallerOwnerId,
-      workshopId,
-      valoracionId,
-      prioridad = 'media',
-      descripcion,
-      estado = 'pendiente_asignacion',
-      mecanicoAsignado = false,
-      fechaAsignacion,
-      tareasAprobadas = [],
-      costoTotal = 0,
-    } = data;
+    
     // 1. Obtener valoración
     const valoracionDoc = await getDoc(doc(db, 'valoraciones', valoracionId));
     if (!valoracionDoc.exists()) {
@@ -250,7 +238,7 @@ class OrdenTrabajoService {
       0
     );
 
-    // 9. ⭐ Crear OT SIN mecánico asignado (SOLUCIÓN AL ERROR)
+    // 9. ⭐ Crear OT SIN mecánico asignado
     const ordenRef = doc(collection(db, 'ordenesTrabajo'));
     const ordenId = ordenRef.id;
 
@@ -259,7 +247,7 @@ class OrdenTrabajoService {
       id: ordenId,
       numeroOT,
       vehiculoId: valoracion.vehiculoId,
-      mecanicoAsignado: false, // ⭐ IMPORTANTE: false en lugar de undefined
+      mecanicoAsignado: false,
       tallerOwnerId: valoracion.tallerOwnerId,
       workshopId: valoracion.workshopId,
       valoracionId: valoracionId,
@@ -278,14 +266,21 @@ class OrdenTrabajoService {
       updatedAt: new Date().toISOString(),
     };
 
-    // ⭐ NO incluir mecanicoId en Firestore cuando es undefined
     await setDoc(ordenRef, ordenData);
 
-    // Crear objeto completo para TypeScript/retorno
     const newOrden: OrdenTrabajo = {
       ...ordenData,
-      mecanicoId: undefined, // ⭐ Para TypeScript, pero no estaba en Firestore
+      mecanicoId: undefined,
     };
+
+    // 🗑️ NUEVA FUNCIONALIDAD: Eliminar la valoración después de crear la OT
+    try {
+      await deleteDoc(doc(db, 'valoraciones', valoracionId));
+      console.log('🗑️  Valoración eliminada:', valoracionId);
+    } catch (deleteError) {
+      console.warn('⚠️  Error al eliminar valoración (OT ya creada):', deleteError);
+      // No fallar todo el proceso si falla la eliminación
+    }
 
     console.log('✅ OT AUTOMÁTICA creada:', numeroOT);
     console.log(`   Tareas: ${tareasAceptadas.length}/${valoracion.tareas?.length || 0}`);
@@ -536,73 +531,86 @@ class OrdenTrabajoService {
    * ⭐ ASIGNAR MECÁNICO a una OT (Jefe del Taller)
    * Toma una OT en estado 'pendiente_asignacion' y le asigna un mecánico
    */
-  async asignarMecanico(
-    ordenId: string,
-    data: AsignarMecanicoData
-  ): Promise<ApiResponse> {
-    try {
-      const { mecanicoId, prioridad, observaciones } = data;
+/**
+ * ⭐ ASIGNAR MECÁNICO a una OT (Jefe del Taller)
+ * Toma una OT en estado 'pendiente_asignacion' y le asigna un mecánico
+ */
+async asignarMecanico(
+  ordenId: string,
+  data: AsignarMecanicoData
+): Promise<ApiResponse> {
+  try {
+    const { mecanicoId, prioridad, observaciones } = data;
 
-      // 1. Obtener la OT
-      const ordenDoc = await getDoc(doc(db, 'ordenesTrabajo', ordenId));
-      if (!ordenDoc.exists()) {
-        return {
-          success: false,
-          message: 'Orden de trabajo no encontrada',
-          error: 'OT_NOT_FOUND',
-        };
-      }
-
-      const orden = ordenDoc.data() as OrdenTrabajo;
-
-      // 2. Verificar que no tenga mecánico asignado
-      if (orden.mecanicoAsignado) {
-        return {
-          success: false,
-          message: 'Esta orden ya tiene un mecánico asignado',
-          error: 'ALREADY_ASSIGNED',
-        };
-      }
-
-      // 3. Validar mecánico
-      const mechanicDoc = await getDoc(doc(db, 'users', mecanicoId));
-      if (!mechanicDoc.exists() || mechanicDoc.data()?.role !== 'mechanic') {
-        return {
-          success: false,
-          message: 'Mecánico no encontrado',
-          error: 'MECHANIC_NOT_FOUND',
-        };
-      }
-
-      // 4. Actualizar OT con mecánico y cambiar estado
-      await updateDoc(doc(db, 'ordenesTrabajo', ordenId), {
-        mecanicoId,
-        mecanicoAsignado: true,
-        fechaAsignacion: new Date().toISOString(),
-        estado: 'asignada',
-        prioridad,
-        observaciones: observaciones || orden.observaciones,
-        updatedAt: new Date().toISOString(),
-      });
-
-      console.log('✅ Mecánico asignado a OT:', orden.numeroOT);
-      console.log(`   Mecánico: ${mecanicoId}`);
-      console.log(`   Prioridad: ${prioridad}`);
-
-      return {
-        success: true,
-        message: `Orden ${orden.numeroOT} asignada exitosamente al mecánico`,
-      };
-    } catch (error: any) {
-      console.error('❌ Error asignando mecánico:', error);
+    // 1. Obtener la OT
+    const ordenDoc = await getDoc(doc(db, 'ordenesTrabajo', ordenId));
+    if (!ordenDoc.exists()) {
       return {
         success: false,
-        message: 'Error al asignar mecánico',
-        error: error.message || 'SERVER_ERROR',
+        message: 'Orden de trabajo no encontrada',
+        error: 'OT_NOT_FOUND',
       };
     }
-  }
 
+    const orden = ordenDoc.data() as OrdenTrabajo;
+
+    // 2. Verificar que no tenga mecánico asignado
+    if (orden.mecanicoAsignado) {
+      return {
+        success: false,
+        message: 'Esta orden ya tiene un mecánico asignado',
+        error: 'ALREADY_ASSIGNED',
+      };
+    }
+
+    // 3. Validar mecánico
+    const mechanicDoc = await getDoc(doc(db, 'users', mecanicoId));
+    if (!mechanicDoc.exists() || mechanicDoc.data()?.role !== 'mechanic') {
+      return {
+        success: false,
+        message: 'Mecánico no encontrado',
+        error: 'MECHANIC_NOT_FOUND',
+      };
+    }
+
+    // 4. ⭐ PREPARAR DATOS - Eliminar campos undefined
+    const updateData: any = {
+      mecanicoId,
+      mecanicoAsignado: true,
+      fechaAsignacion: new Date().toISOString(),
+      estado: 'asignada',
+      prioridad,
+      updatedAt: new Date().toISOString(),
+    };
+
+    // ⭐ Solo agregar observaciones si tiene valor
+    if (observaciones && observaciones.trim() !== '') {
+      updateData.observaciones = observaciones;
+    } else if (orden.observaciones) {
+      // Mantener observaciones existentes si las hay
+      updateData.observaciones = orden.observaciones;
+    }
+
+    // 5. Actualizar OT
+    await updateDoc(doc(db, 'ordenesTrabajo', ordenId), updateData);
+
+    console.log('✅ Mecánico asignado a OT:', orden.numeroOT);
+    console.log(`   Mecánico: ${mecanicoId}`);
+    console.log(`   Prioridad: ${prioridad}`);
+
+    return {
+      success: true,
+      message: `Orden ${orden.numeroOT} asignada exitosamente al mecánico`,
+    };
+  } catch (error: any) {
+    console.error('❌ Error asignando mecánico:', error);
+    return {
+      success: false,
+      message: 'Error al asignar mecánico',
+      error: error.message || 'SERVER_ERROR',
+    };
+  }
+}
   /**
    * Obtener órdenes pendientes de asignación (para el jefe del taller)
    */
