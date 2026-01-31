@@ -1,5 +1,20 @@
 // src/api/services/mechanic.service.ts
 
+import {
+  collection,
+  doc,
+  getDocs,
+  deleteDoc,
+  query,
+  where,
+} from 'firebase/firestore';
+import { db } from '../config/firebase.config';
+import { authService } from './auth.service';
+
+// ============================================
+// INTERFACES
+// ============================================
+
 export interface CreateMechanicData {
   cedula: string;
   nombre_completo: string;
@@ -16,47 +31,84 @@ export interface ApiResponse<T = any> {
   error?: string;
 }
 
-const API_URL = '/api';
+// ============================================
+// SERVICIO DE MECÁNICOS
+// ============================================
 
 class MechanicService {
   /**
-   * Crea un nuevo mecánico vinculado al taller del dueño
+   * Crea un nuevo mecánico vinculado a un taller
    */
   async createMechanic(
     workshopId: string,
     data: CreateMechanicData
   ): Promise<ApiResponse<any>> {
     try {
-      const response = await fetch(`${API_URL}/mechanics`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          ...data,
-          workshopId, // Vincula automáticamente al taller
-        }),
-      });
+      const { cedula, nombre_completo, email, password, phone, specialty } = data;
 
-      const result = await response.json();
-
-      if (!response.ok) {
+      // 1. Validar campos requeridos
+      if (!cedula || !nombre_completo || !email || !password || !workshopId) {
         return {
           success: false,
-          message: result.message || 'Error al crear el mecánico',
-          error: result.error,
+          message: 'Faltan campos requeridos',
+          error: 'MISSING_FIELDS',
         };
       }
 
-      console.log('✅ Mecánico creado exitosamente');
+      // 2. Verificar que el email no esté en uso
+      const emailExists = await authService.emailExists(email);
+      if (emailExists) {
+        return {
+          success: false,
+          message: 'Ya existe un usuario con ese correo electrónico',
+          error: 'DUPLICATE_EMAIL',
+        };
+      }
 
-      return result;
-    } catch (error) {
-      console.error('Error en createMechanic:', error);
+      // 3. Verificar que el taller existe
+      const workshopDoc = await doc(db, 'workshops', workshopId);
+      const workshopSnapshot = await workshopDoc.get();
+      
+      if (!workshopSnapshot.exists()) {
+        return {
+          success: false,
+          message: 'Taller no encontrado',
+          error: 'WORKSHOP_NOT_FOUND',
+        };
+      }
+
+      // 4. Crear el usuario mecánico en Firebase Auth y Firestore
+      const userResult = await authService.createUserAccount(email, password, {
+        cedula,
+        nombre_completo,
+        email,
+        role: 'mechanic',
+        phone,
+        specialty,
+        workshopId,
+      });
+
+      if (!userResult.success || !userResult.data) {
+        return {
+          success: false,
+          message: userResult.message,
+          error: userResult.error,
+        };
+      }
+
+      console.log('✅ Mecánico creado en Firebase:', userResult.data.nombre_completo);
+
+      return {
+        success: true,
+        message: 'Mecánico creado exitosamente',
+        data: userResult.data,
+      };
+    } catch (error: any) {
+      console.error('❌ Error creando mecánico:', error);
       return {
         success: false,
-        message: 'Error de conexión. Asegúrate de que el backend esté corriendo.',
-        error: 'NETWORK_ERROR',
+        message: 'Error de conexión',
+        error: error.message || 'NETWORK_ERROR',
       };
     }
   }
@@ -66,13 +118,18 @@ class MechanicService {
    */
   async getMechanicsByWorkshop(workshopId: string): Promise<ApiResponse<any[]>> {
     try {
-      const response = await fetch(`${API_URL}/mechanics?workshopId=${workshopId}`);
+      const mechanicsQuery = query(
+        collection(db, 'users'),
+        where('role', '==', 'mechanic'),
+        where('workshopId', '==', workshopId)
+      );
 
-      if (!response.ok) {
-        throw new Error('Error al obtener mecánicos');
-      }
+      const mechanicsSnapshot = await getDocs(mechanicsQuery);
+      const mechanics: any[] = [];
 
-      const mechanics = await response.json();
+      mechanicsSnapshot.forEach((doc) => {
+        mechanics.push({ id: doc.id, ...doc.data() });
+      });
 
       return {
         success: true,
@@ -80,7 +137,7 @@ class MechanicService {
         data: mechanics,
       };
     } catch (error) {
-      console.error('Error en getMechanicsByWorkshop:', error);
+      console.error('❌ Error obteniendo mecánicos:', error);
       return {
         success: false,
         message: 'Error al obtener mecánicos',
@@ -90,31 +147,76 @@ class MechanicService {
   }
 
   /**
-   * Elimina un mecánico del taller
+   * Obtiene todos los mecánicos (sin filtro de taller)
+   */
+  async getAllMechanics(): Promise<ApiResponse<any[]>> {
+    try {
+      const mechanicsQuery = query(
+        collection(db, 'users'),
+        where('role', '==', 'mechanic')
+      );
+
+      const mechanicsSnapshot = await getDocs(mechanicsQuery);
+      const mechanics: any[] = [];
+
+      mechanicsSnapshot.forEach((doc) => {
+        mechanics.push({ id: doc.id, ...doc.data() });
+      });
+
+      return {
+        success: true,
+        message: 'Mecánicos obtenidos exitosamente',
+        data: mechanics,
+      };
+    } catch (error) {
+      console.error('❌ Error obteniendo mecánicos:', error);
+      return {
+        success: false,
+        message: 'Error al obtener mecánicos',
+        data: [],
+      };
+    }
+  }
+
+  /**
+   * Elimina un mecánico
    */
   async deleteMechanic(mechanicId: string): Promise<ApiResponse> {
     try {
-      const response = await fetch(`${API_URL}/mechanics/${mechanicId}`, {
-        method: 'DELETE',
-      });
+      // Verificar que el usuario existe y es mecánico
+      const mechanicDoc = await doc(db, 'users', mechanicId);
+      const mechanicSnapshot = await mechanicDoc.get();
 
-      const result = await response.json();
-
-      if (!response.ok) {
+      if (!mechanicSnapshot.exists()) {
         return {
           success: false,
-          message: result.message || 'Error al eliminar el mecánico',
+          message: 'Mecánico no encontrado',
         };
       }
+
+      const mechanicData = mechanicSnapshot.data();
+      
+      if (mechanicData?.role !== 'mechanic') {
+        return {
+          success: false,
+          message: 'El usuario no es un mecánico',
+        };
+      }
+
+      // Eliminar el documento del mecánico
+      await deleteDoc(doc(db, 'users', mechanicId));
+
+      console.log('✅ Mecánico eliminado:', mechanicData.nombre_completo);
 
       return {
         success: true,
         message: 'Mecánico eliminado exitosamente',
       };
     } catch (error) {
+      console.error('❌ Error eliminando mecánico:', error);
       return {
         success: false,
-        message: 'Error al eliminar el mecánico',
+        message: 'Error al eliminar mecánico',
       };
     }
   }

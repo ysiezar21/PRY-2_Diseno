@@ -225,33 +225,7 @@ const TallerPage = () => {
           </Button>
         </Paper>
 
-        {/* Tarjeta: Inventario */}
-        <Paper sx={{ p: 3, flex: 1, minWidth: 250 }}>
-          <Inventory sx={{ fontSize: 50, color: 'warning.main', mb: 2 }} />
-          <Typography variant="h6" gutterBottom>
-            Inventario
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Control de repuestos, herramientas y materiales
-          </Typography>
-          <Button variant="outlined" sx={{ mt: 2 }}>
-            Ver Inventario
-          </Button>
-        </Paper>
-
-        {/* Tarjeta: Facturación */}
-        <Paper sx={{ p: 3, flex: 1, minWidth: 250 }}>
-          <Receipt sx={{ fontSize: 50, color: 'success.main', mb: 2 }} />
-          <Typography variant="h6" gutterBottom>
-            Facturación
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Generar facturas, recibos y controlar pagos
-          </Typography>
-          <Button variant="outlined" sx={{ mt: 2 }}>
-            Facturar
-          </Button>
-        </Paper>
+        
       </Box>
 
       {/* Lista de Mecánicos */}

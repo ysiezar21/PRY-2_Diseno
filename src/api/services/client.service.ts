@@ -1,5 +1,21 @@
 // src/api/services/client.service.ts
 
+import {
+  collection,
+  doc,
+  getDocs,
+  deleteDoc,
+  query,
+  where,
+} from 'firebase/firestore';
+import { db } from '../config/firebase.config';
+import { authService } from './auth.service';
+import { vehicleService } from './vehicle.service';
+
+// ============================================
+// INTERFACES
+// ============================================
+
 export interface CreateClientData {
   cedula: string;
   nombre_completo: string;
@@ -43,7 +59,9 @@ export interface ApiResponse<T = any> {
   error?: string;
 }
 
-const API_URL = '/api';
+// ============================================
+// SERVICIO DE CLIENTES
+// ============================================
 
 class ClientService {
   /**
@@ -51,36 +69,80 @@ class ClientService {
    */
   async createClient(data: CreateClientWithVehicleData): Promise<ApiResponse<any>> {
     try {
-      const response = await fetch(`${API_URL}/clients`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(data),
-      });
+      const { cedula, nombre_completo, email, password, phone, address, vehiculo } = data;
 
-      const result = await response.json();
-
-      if (!response.ok) {
+      // 1. Validar campos requeridos
+      if (!cedula || !nombre_completo || !email || !password) {
         return {
           success: false,
-          message: result.message || 'Error al crear el cliente',
-          error: result.error,
+          message: 'Faltan campos requeridos del cliente',
+          error: 'MISSING_FIELDS',
         };
       }
 
-      console.log('✅ Cliente creado exitosamente');
-      if (data.vehiculo) {
-        console.log('✅ Vehículo también creado');
+      // 2. Verificar que el email no esté en uso
+      const emailExists = await authService.emailExists(email);
+      if (emailExists) {
+        return {
+          success: false,
+          message: 'Ya existe un usuario con ese correo electrónico',
+          error: 'DUPLICATE_EMAIL',
+        };
       }
 
-      return result;
-    } catch (error) {
-      console.error('Error en createClient:', error);
+      // 3. Crear el usuario cliente en Firebase Auth y Firestore
+      const userResult = await authService.createUserAccount(email, password, {
+        cedula,
+        nombre_completo,
+        email,
+        role: 'client',
+        phone,
+        address,
+      });
+
+      if (!userResult.success || !userResult.data) {
+        return {
+          success: false,
+          message: userResult.message,
+          error: userResult.error,
+        };
+      }
+
+      const newClient = userResult.data;
+
+      console.log('✅ Cliente creado en Firebase:', newClient.nombre_completo);
+
+      let newVehicle = null;
+
+      // 4. Si se proporcionó información del vehículo, crearlo
+      if (vehiculo && vehiculo.placa && vehiculo.marca && vehiculo.modelo) {
+        const vehicleResult = await vehicleService.createVehicle({
+          ...vehiculo,
+          clienteId: newClient.id,
+        });
+
+        if (vehicleResult.success && vehicleResult.data) {
+          newVehicle = vehicleResult.data;
+          console.log('✅ Vehículo también creado:', newVehicle.placa);
+        }
+      }
+
+      return {
+        success: true,
+        message: newVehicle
+          ? 'Cliente y vehículo creados exitosamente'
+          : 'Cliente creado exitosamente',
+        data: {
+          client: newClient,
+          vehicle: newVehicle,
+        },
+      };
+    } catch (error: any) {
+      console.error('❌ Error creando cliente:', error);
       return {
         success: false,
-        message: 'Error de conexión. Asegúrate de que el backend esté corriendo.',
-        error: 'NETWORK_ERROR',
+        message: 'Error de conexión',
+        error: error.message || 'NETWORK_ERROR',
       };
     }
   }
@@ -90,13 +152,17 @@ class ClientService {
    */
   async getAllClients(): Promise<ApiResponse<any[]>> {
     try {
-      const response = await fetch(`${API_URL}/clients`);
+      const clientsQuery = query(
+        collection(db, 'users'),
+        where('role', '==', 'client')
+      );
 
-      if (!response.ok) {
-        throw new Error('Error al obtener clientes');
-      }
+      const clientsSnapshot = await getDocs(clientsQuery);
+      const clients: any[] = [];
 
-      const clients = await response.json();
+      clientsSnapshot.forEach((doc) => {
+        clients.push({ id: doc.id, ...doc.data() });
+      });
 
       return {
         success: true,
@@ -104,7 +170,7 @@ class ClientService {
         data: clients,
       };
     } catch (error) {
-      console.error('Error en getAllClients:', error);
+      console.error('❌ Error obteniendo clientes:', error);
       return {
         success: false,
         message: 'Error al obtener clientes',
@@ -118,27 +184,47 @@ class ClientService {
    */
   async deleteClient(clientId: string): Promise<ApiResponse> {
     try {
-      const response = await fetch(`${API_URL}/clients/${clientId}`, {
-        method: 'DELETE',
-      });
+      // Verificar que el usuario existe y es cliente
+      const clientDoc = await doc(db, 'users', clientId);
+      const clientSnapshot = await clientDoc.get();
 
-      const result = await response.json();
-
-      if (!response.ok) {
+      if (!clientSnapshot.exists()) {
         return {
           success: false,
-          message: result.message || 'Error al eliminar el cliente',
+          message: 'Cliente no encontrado',
         };
       }
+
+      const clientData = clientSnapshot.data();
+
+      if (clientData?.role !== 'client') {
+        return {
+          success: false,
+          message: 'El usuario no es un cliente',
+        };
+      }
+
+      // Eliminar el documento del cliente
+      await deleteDoc(doc(db, 'users', clientId));
+
+      console.log('✅ Cliente eliminado:', clientData.nombre_completo);
+
+      // Nota: Podrías también eliminar los vehículos del cliente aquí si lo deseas
+      // const vehiclesQuery = query(collection(db, 'vehicles'), where('clienteId', '==', clientId));
+      // const vehiclesSnapshot = await getDocs(vehiclesQuery);
+      // vehiclesSnapshot.forEach(async (doc) => {
+      //   await deleteDoc(doc.ref);
+      // });
 
       return {
         success: true,
         message: 'Cliente eliminado exitosamente',
       };
     } catch (error) {
+      console.error('❌ Error eliminando cliente:', error);
       return {
         success: false,
-        message: 'Error al eliminar el cliente',
+        message: 'Error al eliminar cliente',
       };
     }
   }
