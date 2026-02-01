@@ -273,7 +273,12 @@ class AuthService {
         createdAt: new Date().toISOString(),
       };
 
-      await setDoc(doc(db, 'users', userId), newUser);
+      // se crea una copia limpia quitandole los valores undefined
+      const userToSave = Object.fromEntries(
+        Object.entries(newUser).filter(([_, value]) => value !== undefined)
+      );
+
+      await setDoc(doc(db, 'users', userId), userToSave);
 
       console.log('✅ Usuario creado en Firebase:', newUser.email);
 
