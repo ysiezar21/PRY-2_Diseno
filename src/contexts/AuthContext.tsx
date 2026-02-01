@@ -7,7 +7,7 @@
 // Permite que cualquier componente acceda a la información del usuario logueado
 // y a las funciones de login/logout sin necesidad de pasar props manualmente.
 
-import React, { createContext, useContext, ReactNode } from 'react';
+import { createContext, useContext, type ReactNode } from 'react';
 import { useAuth as useCustomAuth } from '../hooks/useAuth';
 import type { User } from '../api/services/auth.service';
 

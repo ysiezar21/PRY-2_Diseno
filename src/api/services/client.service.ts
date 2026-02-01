@@ -3,7 +3,6 @@
 import {
   collection,
   doc,
-  setDoc,
   getDoc,
   getDocs,
   updateDoc,
@@ -59,8 +58,7 @@ class ClientService {
    * Crear un nuevo cliente (solo cliente, sin vehículo)
    */
   async createClient(
-    data: CreateClientData,
-    workshopId: string
+    data: CreateClientData
   ): Promise<ApiResponse> {
     try {
       const { cedula, nombre_completo, email, password, phone, address } = data;
@@ -116,7 +114,7 @@ class ClientService {
   ): Promise<ApiResponse> {
     try {
       // 1. Crear el cliente primero
-      const clientResult = await this.createClient(data.cliente, workshopId);
+      const clientResult = await this.createClient(data.cliente);
 
       if (!clientResult.success || !clientResult.data) {
         return clientResult;

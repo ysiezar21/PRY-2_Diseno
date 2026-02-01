@@ -18,7 +18,6 @@ import {
   Divider,
   List,
   Grid,
-  IconButton,
   Tabs,
   Tab,
 } from '@mui/material';
@@ -27,8 +26,6 @@ import {
   CheckCircle,
   Cancel,
   Visibility,
-  DirectionsCar,
-  Assessment,
 } from '@mui/icons-material';
 import { valoracionService, type Valoracion, type TareaValoracion } from '../api/services/valoracion.service';
 import { vehicleService } from '../api/services/vehicle.service';
@@ -315,7 +312,7 @@ const ClientePage = () => {
 
       {/* Tabs */}
       <Paper sx={{ mb: 4 }}>
-        <Tabs value={currentTab} onChange={(e, newValue) => setCurrentTab(newValue)}>
+        <Tabs value={currentTab} onChange={(_e, newValue) => setCurrentTab(newValue)}>
           <Tab label={`Valoraciones (${valoraciones.length})`} />
           <Tab label={`Mis Vehículos (${vehicles.length})`} />
           <Tab label={`Órdenes de Trabajo (${ordenesTrabajo.length})`} />

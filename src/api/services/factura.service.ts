@@ -106,22 +106,6 @@ class FacturaService {
   }
 
   /**
-   * Limpia valores undefined de un objeto para Firestore
-   */
-  private cleanUndefinedValues<T extends Record<string, any>>(obj: T): Partial<T> {
-    const cleaned: any = {};
-    
-    Object.keys(obj).forEach(key => {
-      const value = obj[key];
-      if (value !== undefined) {
-        cleaned[key] = value;
-      }
-    });
-    
-    return cleaned;
-  }
-
-  /**
    * Crear factura desde una orden de trabajo completada
    */
   async createFactura(

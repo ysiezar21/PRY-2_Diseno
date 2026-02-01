@@ -20,7 +20,7 @@ import {
 } from '@mui/material';
 import MenuIcon from '@mui/icons-material/Menu';
 import { useState } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '../../contexts/AuthContext';
 
 // ============================================
 // INTERFACE: Props del Header
@@ -122,12 +122,12 @@ const Header = ({ onDrawerToggle }: HeaderProps) => {
             {/* Botón con el avatar del usuario */}
             <IconButton onClick={handleOpenUserMenu} sx={{ p: 0 }}>
               <Avatar 
-                alt={user?.name}        // Texto alternativo con el nombre del usuario
-                src={user?.avatar}      // URL de la imagen del avatar (si existe)
+                alt={user?.nombre_completo}       // Texto alternativo con el nombre del usuario
                 sx={{ bgcolor: 'secondary.main' }}  // Color de fondo rosa/rojo del tema
               >
                 {/* Si no hay imagen, muestra la primera letra del nombre */}
-                {user?.name?.charAt(0)}
+                {user?.nombre_completo?.charAt(0)}
+                
               </Avatar>
             </IconButton>
           </Tooltip>

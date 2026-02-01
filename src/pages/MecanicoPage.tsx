@@ -27,16 +27,11 @@ import {
   CardActions,
   Divider,
   List,
-  ListItem,
-  ListItemText,
   Grid,
   FormControl,
   InputLabel,
   Select,
   MenuItem,
-  Checkbox,
-  FormControlLabel,
-  InputAdornment,
   Badge,
   LinearProgress,
 } from '@mui/material';
@@ -46,23 +41,21 @@ import {
   Delete,
   Send,
   Visibility,
-  Edit,
+
   CheckCircle,
-  Cancel,
+
   PlayArrow,
   Pause,
-  Stop,
+
   Build,
   DirectionsCar,
   Assignment,
-  AttachMoney,
-  Schedule,
-  ShoppingCart,
   Task,
   Receipt,
   Download,
   PictureAsPdf,
 } from '@mui/icons-material';
+
 import { valoracionService, type Valoracion, type TareaValoracion } from '../api/services/valoracion.service';
 import { vehicleService } from '../api/services/vehicle.service';
 import { clientService } from '../api/services/client.service';
@@ -419,23 +412,8 @@ const MecanicoPage = () => {
     }
   };
 
-  const handleAgregarRepuesto = () => {
-    const { nombre, cantidad, precio } = trabajoOTData.nuevoRepuesto;
-    if (nombre.trim() && cantidad > 0 && precio >= 0) {
-      setTrabajoOTData(prev => ({
-        ...prev,
-        repuestosUsados: [...prev.repuestosUsados, { nombre, cantidad, precio }],
-        nuevoRepuesto: { nombre: '', cantidad: 0, precio: 0 },
-      }));
-    }
-  };
 
-  const handleEliminarRepuesto = (index: number) => {
-    setTrabajoOTData(prev => ({
-      ...prev,
-      repuestosUsados: prev.repuestosUsados.filter((_, i) => i !== index),
-    }));
-  };
+
 
   const handlePausarOT = async () => {
     if (!selectedOT) return;
@@ -588,7 +566,6 @@ const MecanicoPage = () => {
     const doc = new jsPDF();
 
     // Configurar fuentes y colores
-    const primaryColor = '#00897b';
     const textColor = '#333333';
 
     // HEADER - Logo y título
@@ -662,7 +639,7 @@ const MecanicoPage = () => {
     doc.setFont('helvetica', 'bold');
     doc.text('Método de Pago:', 20, yPos);
     doc.setFont('helvetica', 'normal');
-    doc.text(factura.metodoPago.toUpperCase(), 60, yPos);
+    doc.text((factura.metodoPago || 'N/A').toUpperCase(), 60, yPos);
 
     // Tabla de detalles
     yPos += 10;
@@ -959,7 +936,7 @@ const MecanicoPage = () => {
       <Paper sx={{ mb: 4, borderRadius: 2 }}>
         <Tabs 
           value={currentTab} 
-          onChange={(e, newValue) => setCurrentTab(newValue)}
+          onChange={(_e, newValue) => setCurrentTab(newValue)}
           sx={{ borderBottom: 1, borderColor: 'divider' }}
         >
           <Tab label={
@@ -1807,7 +1784,7 @@ const MecanicoPage = () => {
                 <Select
                   name="metodoPago"
                   value={facturaFormData.metodoPago}
-                  onChange={handleFacturaInputChange}
+                  onChange={(e) => handleFacturaInputChange(e as any)}
                   label="Método de Pago"
                 >
                   <MenuItem value="efectivo">Efectivo</MenuItem>

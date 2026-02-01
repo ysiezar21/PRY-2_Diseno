@@ -143,6 +143,46 @@ class AuthService {
   }
 
   /**
+   * Registra un nuevo usuario
+   */
+  async register(data: RegisterData): Promise<ApiResponse<User>> {
+    try {
+      // 1. Verificar si el email ya existe
+      const emailExists = await this.emailExists(data.email);
+      if (emailExists) {
+        return {
+          success: false,
+          message: 'Este correo electrónico ya está registrado',
+          error: 'EMAIL_EXISTS',
+        };
+      }
+
+      // 2. Crear cuenta de usuario
+      const result = await this.createUserAccount(
+        data.email,
+        data.password,
+        {
+          cedula: data.cedula,
+          nombre_completo: data.nombre_completo,
+          email: data.email,
+          role: data.role,
+          phone: data.phone,
+          address: data.address,
+        }
+      );
+
+      return result;
+    } catch (error: any) {
+      console.error('❌ Error en registro:', error);
+      return {
+        success: false,
+        message: 'Error al registrar usuario',
+        error: error.message || 'SERVER_ERROR',
+      };
+    }
+  }
+
+  /**
    * Cierra la sesión del usuario
    */
   async logout(): Promise<void> {

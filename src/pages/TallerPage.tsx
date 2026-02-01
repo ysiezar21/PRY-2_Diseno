@@ -843,9 +843,7 @@ const TallerPage = () => {
     return estadoValido && tareasAceptadas > 0 && !yaExisteOT;
   };
 
-  const yaExisteOT = (valoracionId: string) => {
-    return ordenesTrabajo.some(ot => ot.valoracionId === valoracionId);
-  };
+
 
   const getOrdenesPendientesAsignacion = () => {
     return ordenesTrabajo.filter(ot => 
@@ -858,12 +856,6 @@ const TallerPage = () => {
     return valoraciones.filter(v => v.estado === 'pendiente' || v.estado === 'pendiente_aprobacion_cliente').length;
   };
 
-  const getOrdenesActivas = () => {
-    return ordenesTrabajo.filter(ot => 
-      ot.estado !== 'completada' && 
-      ot.estado !== 'cancelada'
-    ).length;
-  };
 
   const getIngresosPendientes = () => {
     return ordenesTrabajo
@@ -871,10 +863,6 @@ const TallerPage = () => {
       .reduce((sum, ot) => sum + (ot.costoTotal || 0), 0);
   };
 
-  const getVehiculosSinValoracion = () => {
-    const vehiculosConValoracion = new Set(valoraciones.map(v => v.vehiculoId));
-    return vehicles.filter(v => !vehiculosConValoracion.has(v.id)).length;
-  };
 
   return (
     <Box sx={{ p: 3 }}>
@@ -968,7 +956,7 @@ const TallerPage = () => {
       <Paper sx={{ mb: 4, borderRadius: 2, overflow: 'hidden' }}>
         <Tabs 
           value={currentTab} 
-          onChange={(e, newValue) => setCurrentTab(newValue)}
+          onChange={(_e, newValue) => setCurrentTab(newValue)}
           sx={{ 
             borderBottom: 1, 
             borderColor: 'divider',
@@ -1854,7 +1842,7 @@ const TallerPage = () => {
               options={vehicles}
               getOptionLabel={(option) => `${option.marca} ${option.modelo} - ${option.placa}`}
               value={vehicles.find((v) => v.id === valoracionFormData.vehiculoId) || null}
-              onChange={(event, newValue) => {
+              onChange={(_event, newValue) => {
                 setValoracionFormData((prev) => ({ ...prev, vehiculoId: newValue ? newValue.id : '' }));
               }}
               renderInput={(params) => (
@@ -1876,7 +1864,7 @@ const TallerPage = () => {
               options={mechanics}
               getOptionLabel={(option) => `${option.nombre_completo} - ${option.specialty || 'Sin especialidad'}`}
               value={mechanics.find((m) => m.id === valoracionFormData.mecanicoId) || null}
-              onChange={(event, newValue) => {
+              onChange={(_event, newValue) => {
                 setValoracionFormData((prev) => ({ ...prev, mecanicoId: newValue ? newValue.id : '' }));
               }}
               renderInput={(params) => (
@@ -1928,7 +1916,7 @@ const TallerPage = () => {
               options={vehicles}
               getOptionLabel={(option) => `${option.marca} ${option.modelo} - ${option.placa}`}
               value={vehicles.find((v) => v.id === otFormData.vehiculoId) || null}
-              onChange={(event, newValue) => {
+              onChange={(_event, newValue) => {
                 setOTFormData((prev) => ({ ...prev, vehiculoId: newValue ? newValue.id : '' }));
               }}
               renderInput={(params) => (
@@ -1950,7 +1938,7 @@ const TallerPage = () => {
               options={mechanics}
               getOptionLabel={(option) => option.nombre_completo}
               value={mechanics.find((m) => m.id === otFormData.mecanicoId) || null}
-              onChange={(event, newValue) => {
+              onChange={(_event, newValue) => {
                 setOTFormData((prev) => ({ ...prev, mecanicoId: newValue ? newValue.id : '' }));
               }}
               renderInput={(params) => (

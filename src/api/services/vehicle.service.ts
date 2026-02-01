@@ -44,6 +44,8 @@ export interface CreateVehicleData {
   año: number;
   color?: string;
   clienteId: string;
+  workshopId?: string;
+  tallerOwnerId?: string;
 }
 
 export interface ApiResponse<T = any> {
