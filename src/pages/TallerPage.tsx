@@ -89,7 +89,7 @@ interface TareaValoracion {
   nombre: string;
   descripcion: string;
   precioEstimado: number;
-  estado: 'pendiente' | 'aceptada' | 'rechazada';
+  estado: 'propuesta' | 'aceptada' | 'rechazada';
   completada?: boolean;
 }
 
