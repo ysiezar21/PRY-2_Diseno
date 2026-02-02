@@ -1,80 +1,68 @@
 // src/pages/ClientePage.tsx
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Box,
   Typography,
   Paper,
+  Tabs,
+  Tab,
+  Badge,
+  Alert,
+  CircularProgress,
+  Grid,
+  Card,
+  CardContent,
+  CardActions,
   Button,
   Chip,
   Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
-  Alert,
-  CircularProgress,
-  Card,
-  CardContent,
-  CardActions,
   Divider,
-  List,
-  Grid,
-  Tabs,
-  Tab,
+  Checkbox,
+  FormControlLabel,
 } from '@mui/material';
+import { DirectionsCar, Receipt } from '@mui/icons-material';
+
 import { useAuthContext } from '../contexts/AuthContext';
-import {
-  CheckCircle,
-  Cancel,
-  Visibility,
-} from '@mui/icons-material';
-import { valoracionService, type Valoracion, type TareaValoracion } from '../api/services/valoracion.service';
-import { vehicleService } from '../api/services/vehicle.service';
-import { ordenTrabajoService } from '../api/services/ordenTrabajo.service';
+import { cotizacionService, type Cotizacion } from '../api/services/cotizacion.service';
+import { vehicleService, type Vehicle } from '../api/services/vehicle.service';
+import { ordenTrabajoService, type OrdenTrabajo } from '../api/services/ordenTrabajo.service';
 
 const ClientePage = () => {
   const { user } = useAuthContext();
 
-  // Estados principales
   const [currentTab, setCurrentTab] = useState(0);
-  const [loading, setLoading] = useState(false);
   const [loadingData, setLoadingData] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  // Datos
-  const [valoraciones, setValoraciones] = useState<Valoracion[]>([]);
-  const [vehicles, setVehicles] = useState<any[]>([]);
-  const [ordenesTrabajo, setOrdenesTrabajo] = useState<any[]>([]);
+  const [cotizaciones, setCotizaciones] = useState<Cotizacion[]>([]);
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [ordenesTrabajo, setOrdenesTrabajo] = useState<OrdenTrabajo[]>([]);
 
-  // Modal de valoración
-  const [openValoracionModal, setOpenValoracionModal] = useState(false);
-  const [selectedValoracion, setSelectedValoracion] = useState<Valoracion | null>(null);
+  const [openCotizacionModal, setOpenCotizacionModal] = useState(false);
+  const [selectedCotizacion, setSelectedCotizacion] = useState<Cotizacion | null>(null);
+  const [selectedOpcionales, setSelectedOpcionales] = useState<Record<string, boolean>>({});
 
-  // Cargar datos al montar
   useEffect(() => {
     if (user?.id) {
-      loadAllData();
+      void loadAll();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
-  const loadAllData = async () => {
-    await Promise.all([
-      loadValoraciones(),
-      loadVehicles(),
-      loadOrdenesTrabajo(),
-    ]);
-  };
-
-  const loadValoraciones = async () => {
-    if (!user?.id) return;
+  const loadAll = async () => {
     setLoadingData(true);
+    setError(null);
     try {
-      const result = await valoracionService.getValoracionesByCliente(user.id);
-      if (result.success && result.data) {
-        setValoraciones(result.data);
-      }
-    } catch (err) {
-      console.error('Error cargando valoraciones:', err);
+      await Promise.all([loadVehicles(), loadCotizaciones()]);
+      await loadOrdenesTrabajo();
+    } catch (err: any) {
+      console.error(err);
+      setError('Error cargando datos.');
     } finally {
       setLoadingData(false);
     }
@@ -82,355 +70,216 @@ const ClientePage = () => {
 
   const loadVehicles = async () => {
     if (!user?.id) return;
-    try {
-      const result = await vehicleService.getVehiclesByClient(user.id);
-      if (result.success && result.data) {
-        setVehicles(result.data);
-      }
-    } catch (err) {
-      console.error('Error cargando vehículos:', err);
+    const res = await vehicleService.getVehiclesByClient(user.id);
+    if (res.success && res.data) {
+      setVehicles(res.data);
+    }
+  };
+
+  const loadCotizaciones = async () => {
+    if (!user?.id) return;
+    const res = await cotizacionService.getCotizacionesByCliente(user.id);
+    if (res.success && res.data) {
+      // ordenar por fecha
+      const sorted = [...res.data].sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+      setCotizaciones(sorted);
     }
   };
 
   const loadOrdenesTrabajo = async () => {
-    if (!user?.id) return;
-    try {
-      // Obtener todas las OTs de los vehículos del cliente
-      const vehicleResult = await vehicleService.getVehiclesByClient(user.id);
-      if (vehicleResult.success && vehicleResult.data) {
-        const vehicleIds = vehicleResult.data.map((v: any) => v.id);
-        
-        const allOTs: any[] = [];
-        for (const vehicleId of vehicleIds) {
-          const otResult = await ordenTrabajoService.getOrdenesByVehiculo(vehicleId);
-          if (otResult.success && otResult.data) {
-            allOTs.push(...otResult.data);
-          }
-        }
-        
-        setOrdenesTrabajo(allOTs);
+    // No hay un endpoint por cliente, así que se construye por vehículo
+    const all: OrdenTrabajo[] = [];
+    for (const v of vehicles) {
+      const res = await ordenTrabajoService.getOrdenesByVehiculo(v.id);
+      if (res.success && res.data) {
+        all.push(...res.data);
       }
-    } catch (err) {
-      console.error('Error cargando órdenes de trabajo:', err);
     }
+    // eliminar duplicados por id
+    const map = new Map<string, OrdenTrabajo>();
+    all.forEach((ot) => map.set(ot.id, ot));
+    setOrdenesTrabajo(Array.from(map.values()).sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '')));
   };
 
-  // ========== GESTIÓN DE VALORACIONES ==========
-
-  const handleOpenValoracion = (valoracion: Valoracion) => {
-    setSelectedValoracion(valoracion);
-    setOpenValoracionModal(true);
+  const getVehicleInfo = (vehiculoId: string) => {
+    const v = vehicles.find((x) => x.id === vehiculoId);
+    return v ? `${v.marca} ${v.modelo} - ${v.placa}` : 'Vehículo';
   };
 
-  const handleCloseValoracionModal = () => {
-    setOpenValoracionModal(false);
-    setSelectedValoracion(null);
+  const cotizacionTotal = useMemo(() => {
+    if (!selectedCotizacion) return 0;
+    const items = selectedCotizacion.items || [];
+    const repuestos = selectedCotizacion.repuestos || [];
+
+    const itemsTotal = items.reduce((sum, it) => {
+      const included = it.obligatorio ? true : !!selectedOpcionales[it.id];
+      return sum + (included ? (it.precio || 0) : 0);
+    }, 0);
+
+    const repuestosTotal = repuestos.reduce((sum, r) => sum + (r.cantidad || 0) * (r.precioUnitario || 0), 0);
+
+    return itemsTotal + repuestosTotal;
+  }, [selectedCotizacion, selectedOpcionales]);
+
+  const openResponderCotizacion = (c: Cotizacion) => {
+    setSelectedCotizacion(c);
+    // por defecto: opcionales desmarcadas
+    const init: Record<string, boolean> = {};
+    (c.items || []).forEach((it) => {
+      if (!it.obligatorio) init[it.id] = false;
+    });
+    setSelectedOpcionales(init);
+    setOpenCotizacionModal(true);
+    setError(null);
+    setSuccess(null);
   };
 
-  const handleResponderTarea = async (tareaId: string, aceptada: boolean) => {
-    if (!selectedValoracion) return;
+  const closeResponderCotizacion = () => {
+    setOpenCotizacionModal(false);
+    setSelectedCotizacion(null);
+    setSelectedOpcionales({});
+  };
 
+  const toggleOpcional = (itemId: string, checked: boolean) => {
+    setSelectedOpcionales((prev) => ({ ...prev, [itemId]: checked }));
+  };
+
+  const aceptarCotizacion = async () => {
+    if (!selectedCotizacion) return;
     setLoading(true);
     setError(null);
-
+    setSuccess(null);
     try {
-      const result = await valoracionService.responderTarea(
-        selectedValoracion.id,
-        tareaId,
-        aceptada
-      );
+      const opc = Object.entries(selectedOpcionales)
+        .filter(([, v]) => v)
+        .map(([k]) => k);
 
-      if (result.success) {
-        const mensaje = aceptada ? 'Tarea aceptada' : 'Tarea rechazada';
-        
-        // Si todas las tareas fueron respondidas
-        if (result.data?.todasRespondidas) {
-          if (result.data.estadoCliente === 'totalmente_aceptada') {
-            setSuccess(`${mensaje} ✅ ¡Has aceptado todas las tareas! El taller procederá a crear la orden de trabajo.`);
-          } else if (result.data.estadoCliente === 'parcialmente_aceptada') {
-            setSuccess(`${mensaje} ✅ Has completado tu revisión. Aceptaste ${result.data.tareasAceptadas} de ${result.data.tareasAceptadas + result.data.tareasRechazadas} tareas.`);
-          } else if (result.data.estadoCliente === 'rechazada') {
-            setSuccess(`${mensaje} ❌ Has rechazado todas las tareas. El taller será notificado.`);
-          }
-        } else {
-          setSuccess(mensaje);
-        }
-        
-        await loadValoraciones();
-        
-        // Actualizar la valoración seleccionada
-        const updatedValoracion = await valoracionService.getValoracionById(selectedValoracion.id);
-        if (updatedValoracion.success && updatedValoracion.data) {
-          setSelectedValoracion(updatedValoracion.data);
-        }
-
-        setTimeout(() => {
-          setSuccess(null);
-          // Si completó todas las respuestas, cerrar el modal
-          if (result.data?.todasRespondidas) {
-            setTimeout(() => {
-              handleCloseValoracionModal();
-            }, 2000);
-          }
-        }, 5000);
+      const res = await cotizacionService.responderCotizacion(selectedCotizacion.id, {
+        aceptada: true,
+        itemsOpcionalesSeleccionados: opc,
+      });
+      if (res.success) {
+        setSuccess('✅ Cotización aprobada. Se generó una Orden de Trabajo.');
+        await Promise.all([loadCotizaciones(), loadOrdenesTrabajo()]);
+        setTimeout(() => closeResponderCotizacion(), 900);
       } else {
-        setError(result.message);
+        setError(res.message);
       }
-    } catch (err) {
-      setError('Error al responder tarea');
+    } catch (err: any) {
+      console.error(err);
+      setError('Error aprobando cotización.');
     } finally {
       setLoading(false);
     }
   };
 
-  // Helpers
-  const getVehicleInfo = (vehicleId: string) => {
-    const vehicle = vehicles.find((v) => v.id === vehicleId);
-    return vehicle
-      ? `${vehicle.marca} ${vehicle.modelo} (${vehicle.placa})`
-      : 'Vehículo desconocido';
-  };
-
-  const getEstadoColor = (estado: string) => {
-    switch (estado) {
-      case 'completada':
-        return 'success';
-      case 'en_proceso':
-      case 'en_progreso':
-        return 'warning';
-      case 'pendiente_aprobacion_cliente':
-        return 'info';
-      case 'pendiente':
-      case 'asignada':
-        return 'default';
-      default:
-        return 'default';
+  const rechazarCotizacion = async () => {
+    if (!selectedCotizacion) return;
+    setLoading(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const res = await cotizacionService.responderCotizacion(selectedCotizacion.id, {
+        aceptada: false,
+        itemsOpcionalesSeleccionados: [],
+      });
+      if (res.success) {
+        setSuccess('❌ Cotización rechazada.');
+        await loadCotizaciones();
+        setTimeout(() => closeResponderCotizacion(), 900);
+      } else {
+        setError(res.message);
+      }
+    } catch (err: any) {
+      console.error(err);
+      setError('Error rechazando cotización.');
+    } finally {
+      setLoading(false);
     }
   };
 
-  const getEstadoLabel = (estado: string) => {
-    switch (estado) {
-      case 'pendiente':
-        return 'Mecánico trabajando';
-      case 'en_proceso':
-        return 'En valoración';
-      case 'completada':
-        return 'Completada';
-      case 'pendiente_aprobacion_cliente':
-        return '⏳ Esperando tu respuesta';
-      case 'asignada':
-        return 'Asignada';
-      case 'en_progreso':
-        return 'En progreso';
-      default:
-        return estado;
-    }
-  };
-
-  const getEstadoClienteLabel = (estado?: string) => {
-    switch (estado) {
-      case 'pendiente_revision':
-        return '⏳ Pendiente de revisión';
-      case 'revisada':
-        return '👀 Revisada';
-      case 'parcialmente_aceptada':
-        return '⚠️ Parcialmente aceptada';
-      case 'totalmente_aceptada':
-        return '✅ Totalmente aceptada';
-      case 'rechazada':
-        return '❌ Rechazada';
-      default:
-        return '';
-    }
-  };
-
-  const calcularCostoTotal = (tareas: TareaValoracion[]) => {
-    if (!tareas || tareas.length === 0) return 0;
-    return tareas.reduce((sum, tarea) => sum + tarea.precioEstimado, 0);
-  };
-
-  const calcularTareasAceptadas = (tareas: TareaValoracion[]) => {
-    if (!tareas || tareas.length === 0) return 0;
-    return tareas.filter((t) => t.estado === 'aceptada').reduce((sum, t) => sum + t.precioEstimado, 0);
-  };
-
-  const getPrioridadColor = (prioridad: string) => {
-    switch (prioridad) {
-      case 'urgente':
-        return 'error';
-      case 'alta':
-        return 'warning';
-      case 'media':
-        return 'info';
-      case 'baja':
-        return 'default';
-      default:
-        return 'default';
-    }
-  };
-
-  const contarTareasPorEstado = (tareas: TareaValoracion[]) => {
-    if (!tareas || tareas.length === 0) {
-      return { aceptadas: 0, rechazadas: 0, pendientes: 0, total: 0 };
-    }
-    
-    return {
-      aceptadas: tareas.filter((t) => t.estado === 'aceptada').length,
-      rechazadas: tareas.filter((t) => t.estado === 'rechazada').length,
-      pendientes: tareas.filter((t) => t.estado === 'propuesta').length,
-      total: tareas.length,
-    };
-  };
+  if (!user) {
+    return (
+      <Box sx={{ p: 3 }}>
+        <Alert severity="warning">Debes iniciar sesión para acceder.</Alert>
+      </Box>
+    );
+  }
 
   return (
     <Box sx={{ p: 3 }}>
-      {/* Header */}
-      <Paper sx={{ p: 4, mb: 4, backgroundColor: 'success.main', color: 'white' }}>
-        <Typography variant="h3" gutterBottom>
-          🚗 Panel del Cliente
-        </Typography>
-        <Typography variant="h5">Bienvenido, {user?.nombre_completo}</Typography>
-        <Typography variant="body1" sx={{ mt: 2 }}>
-          Rol: <strong>Cliente</strong>
-        </Typography>
-        <Typography variant="body2" sx={{ mt: 1 }}>
-          Cédula: {user?.cedula} | Email: {user?.email}
-        </Typography>
-      </Paper>
+      <Paper sx={{ borderRadius: 2, overflow: 'hidden' }}>
+        <Box sx={{ p: 2, backgroundColor: 'primary.main', color: 'white' }}>
+          <Typography variant="h5">Portal del Cliente</Typography>
+          <Typography variant="body2" sx={{ opacity: 0.9 }}>
+            Revisa cotizaciones, tus vehículos y órdenes de trabajo.
+          </Typography>
+        </Box>
 
-      {/* Mensajes */}
-      {success && (
-        <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccess(null)}>
-          {success}
-        </Alert>
-      )}
-      {error && (
-        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
-          {error}
-        </Alert>
-      )}
-
-      {/* Tabs */}
-      <Paper sx={{ mb: 4 }}>
-        <Tabs value={currentTab} onChange={(_e, newValue) => setCurrentTab(newValue)}>
-          <Tab label={`Valoraciones (${valoraciones.length})`} />
+        <Tabs value={currentTab} onChange={(_e, v) => setCurrentTab(v)}>
+          <Tab
+            label={
+              <Badge badgeContent={cotizaciones.filter(c => c.estado === 'pendiente_aprobacion_cliente').length} color="warning">
+                Cotizaciones
+              </Badge>
+            }
+          />
           <Tab label={`Mis Vehículos (${vehicles.length})`} />
-          <Tab label={`Órdenes de Trabajo (${ordenesTrabajo.length})`} />
+          <Tab
+            label={
+              <Badge badgeContent={ordenesTrabajo.length} color="secondary">
+                Órdenes de Trabajo
+              </Badge>
+            }
+          />
         </Tabs>
 
-        {/* TAB 0: VALORACIONES */}
+        {/* TAB 0: COTIZACIONES */}
         {currentTab === 0 && (
           <Box sx={{ p: 3 }}>
             <Typography variant="h6" gutterBottom>
-              Valoraciones de tus Vehículos
+              Cotizaciones
             </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-              Aquí puedes ver las valoraciones que los mecánicos han realizado a tus vehículos. Revisa las tareas propuestas y acepta las que deseas realizar.
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              Aquí aparecen las cotizaciones creadas por el administrador del taller a partir de la valoración del mecánico.
+              Puedes aprobarlas o rechazarlas.
             </Typography>
+
+            {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+            {success && <Alert severity="success" sx={{ mb: 2 }}>{success}</Alert>}
 
             {loadingData ? (
               <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
                 <CircularProgress />
               </Box>
-            ) : valoraciones.length === 0 ? (
-              <Alert severity="info">
-                No tienes valoraciones en este momento.
-              </Alert>
+            ) : cotizaciones.length === 0 ? (
+              <Alert severity="info">Aún no tienes cotizaciones.</Alert>
             ) : (
-              <Grid container spacing={3}>
-                {valoraciones.map((valoracion) => (
-                  <Grid item xs={12} md={6} lg={4} key={valoracion.id}>
-                    <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-                      <CardContent sx={{ flexGrow: 1 }}>
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-                          <Typography variant="h6" component="div">
-                            🚗 {getVehicleInfo(valoracion.vehiculoId)}
-                          </Typography>
+              <Grid container spacing={2}>
+                {cotizaciones.map((c) => (
+                  <Grid item xs={12} md={6} key={c.id}>
+                    <Card sx={{ borderRadius: 2 }} variant="outlined">
+                      <CardContent>
+                        <Typography variant="subtitle1" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <DirectionsCar fontSize="small" /> {getVehicleInfo(c.vehiculoId)}
+                        </Typography>
+                        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mt: 1 }}>
+                          <Chip
+                            label={`Estado: ${c.estado}`}
+                            color={c.estado === 'pendiente_aprobacion_cliente' ? 'warning' : c.estado === 'aprobada' ? 'success' : 'error'}
+                            size="small"
+                          />
+                          <Chip
+                            icon={<Receipt fontSize="small" />}
+                            label={`Total estimado: ₡${(c.totalEstimado || 0).toLocaleString()}`}
+                            size="small"
+                            variant="outlined"
+                          />
                         </Box>
-
-                        <Chip
-                          label={getEstadoLabel(valoracion.estado)}
-                          color={getEstadoColor(valoracion.estado)}
-                          size="small"
-                          sx={{ mb: 1 }}
-                        />
-
-                        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                          <strong>Fecha:</strong>{' '}
-                          {new Date(valoracion.fechaAsignacion).toLocaleDateString()}
-                        </Typography>
-
-                        <Divider sx={{ my: 2 }} />
-
-                        <Typography variant="body2" sx={{ mb: 1 }}>
-                          <strong>Tareas propuestas:</strong> {valoracion.tareas?.length || 0}
-                        </Typography>
-
-                        {valoracion.tareas && valoracion.tareas.length > 0 && (
-                          <>
-                            <Typography variant="body2" color="primary.main" sx={{ fontWeight: 'bold', mb: 1 }}>
-                              Costo total: ₡{calcularCostoTotal(valoracion.tareas).toLocaleString()}
-                            </Typography>
-
-                            {valoracion.estadoCliente && valoracion.estadoCliente !== 'pendiente_revision' && (
-                              <Typography variant="body2" color="success.main" sx={{ fontWeight: 'bold' }}>
-                                Tareas aceptadas: ₡{calcularTareasAceptadas(valoracion.tareas).toLocaleString()}
-                              </Typography>
-                            )}
-                          </>
-                        )}
-
-                        {valoracion.estadoCliente && (
-                          <Box sx={{ mt: 2 }}>
-                            <Chip
-                              label={getEstadoClienteLabel(valoracion.estadoCliente)}
-                              color={
-                                valoracion.estadoCliente === 'totalmente_aceptada'
-                                  ? 'success'
-                                  : valoracion.estadoCliente === 'parcialmente_aceptada'
-                                  ? 'warning'
-                                  : valoracion.estadoCliente === 'pendiente_revision'
-                                  ? 'info'
-                                  : 'default'
-                              }
-                              size="small"
-                            />
-                          </Box>
-                        )}
-
-                        {valoracion.estado === 'pendiente_aprobacion_cliente' && (
-                          <>
-                            {(() => {
-                              const stats = contarTareasPorEstado(valoracion.tareas || []);
-                              const pendientes = stats.pendientes;
-                              
-                              return (
-                                <>
-                                  {pendientes > 0 ? (
-                                    <Alert severity="warning" sx={{ mt: 2 }}>
-                                      ⏰ Tienes {pendientes} {pendientes === 1 ? 'tarea pendiente' : 'tareas pendientes'} de revisar
-                                    </Alert>
-                                  ) : (
-                                    <Alert severity="success" sx={{ mt: 2 }}>
-                                      ✅ Revisión completada
-                                    </Alert>
-                                  )}
-                                </>
-                              );
-                            })()}
-                          </>
-                        )}
                       </CardContent>
-
-                      <CardActions>
-                        <Button
-                          size="small"
-                          variant="contained"
-                          startIcon={<Visibility />}
-                          onClick={() => handleOpenValoracion(valoracion)}
-                          fullWidth
-                        >
-                          Ver Detalles
+                      <CardActions sx={{ justifyContent: 'flex-end' }}>
+                        <Button size="small" variant="contained" onClick={() => openResponderCotizacion(c)}>
+                          Ver detalle
                         </Button>
                       </CardActions>
                     </Card>
@@ -441,34 +290,33 @@ const ClientePage = () => {
           </Box>
         )}
 
-        {/* TAB 1: MIS VEHÍCULOS */}
+        {/* TAB 1: VEHÍCULOS */}
         {currentTab === 1 && (
           <Box sx={{ p: 3 }}>
             <Typography variant="h6" gutterBottom>
-              Mis Vehículos Registrados
+              Mis Vehículos
             </Typography>
 
-            {vehicles.length === 0 ? (
+            {loadingData ? (
+              <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
+                <CircularProgress />
+              </Box>
+            ) : vehicles.length === 0 ? (
               <Alert severity="info">No tienes vehículos registrados.</Alert>
             ) : (
-              <Grid container spacing={3}>
-                {vehicles.map((vehicle) => (
-                  <Grid item xs={12} md={6} key={vehicle.id}>
-                    <Card>
+              <Grid container spacing={2}>
+                {vehicles.map((v) => (
+                  <Grid item xs={12} md={6} key={v.id}>
+                    <Card sx={{ borderRadius: 2 }} variant="outlined">
                       <CardContent>
-                        <Typography variant="h6" gutterBottom>
-                          🚗 {vehicle.marca} {vehicle.modelo}
+                        <Typography variant="subtitle1" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <DirectionsCar fontSize="small" /> {v.marca} {v.modelo}
                         </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          <strong>Placa:</strong> {vehicle.placa}
+                        <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                          Placa: <strong>{v.placa}</strong>
                         </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          <strong>Año:</strong> {vehicle.año}
-                        </Typography>
-                        {vehicle.color && (
-                          <Typography variant="body2" color="text.secondary">
-                            <strong>Color:</strong> {vehicle.color}
-                          </Typography>
+                        {v.estadoProceso && (
+                          <Chip label={v.estadoProceso} size="small" sx={{ mt: 1 }} />
                         )}
                       </CardContent>
                     </Card>
@@ -479,56 +327,32 @@ const ClientePage = () => {
           </Box>
         )}
 
-        {/* TAB 2: ÓRDENES DE TRABAJO */}
+        {/* TAB 2: ÓRDENES */}
         {currentTab === 2 && (
           <Box sx={{ p: 3 }}>
             <Typography variant="h6" gutterBottom>
-              Estado de Reparaciones
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-              Aquí puedes ver el progreso de las reparaciones aprobadas.
+              Órdenes de Trabajo
             </Typography>
 
-            {ordenesTrabajo.length === 0 ? (
-              <Alert severity="info">
-                No tienes órdenes de trabajo activas.
-              </Alert>
+            {loadingData ? (
+              <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
+                <CircularProgress />
+              </Box>
+            ) : ordenesTrabajo.length === 0 ? (
+              <Alert severity="info">Aún no tienes órdenes de trabajo.</Alert>
             ) : (
-              <Grid container spacing={3}>
+              <Grid container spacing={2}>
                 {ordenesTrabajo.map((ot) => (
                   <Grid item xs={12} md={6} key={ot.id}>
-                    <Card>
+                    <Card sx={{ borderRadius: 2 }} variant="outlined">
                       <CardContent>
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-                          <Typography variant="h6">{ot.numeroOT}</Typography>
-                          <Chip
-                            label={ot.estado}
-                            color={getEstadoColor(ot.estado)}
-                            size="small"
-                          />
-                        </Box>
-
-                        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                          <strong>Vehículo:</strong> {getVehicleInfo(ot.vehiculoId)}
+                        <Typography variant="subtitle1" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <Receipt fontSize="small" /> {ot.numeroOT}
                         </Typography>
-
-                        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                          <strong>Fecha:</strong>{' '}
-                          {new Date(ot.fechaAsignacion).toLocaleDateString()}
+                        <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                          Vehículo: <strong>{getVehicleInfo(ot.vehiculoId)}</strong>
                         </Typography>
-
-                        <Chip
-                          label={ot.prioridad}
-                          color={getPrioridadColor(ot.prioridad)}
-                          size="small"
-                          sx={{ mt: 1 }}
-                        />
-
-                        {ot.costoTotal && (
-                          <Typography variant="h6" color="primary.main" sx={{ mt: 2 }}>
-                            Total: ₡{ot.costoTotal.toLocaleString()}
-                          </Typography>
-                        )}
+                        <Chip label={ot.estado} size="small" sx={{ mt: 1 }} />
                       </CardContent>
                     </Card>
                   </Grid>
@@ -539,205 +363,101 @@ const ClientePage = () => {
         )}
       </Paper>
 
-      {/* MODAL: DETALLES DE VALORACIÓN */}
-      <Dialog
-        open={openValoracionModal}
-        onClose={handleCloseValoracionModal}
-        maxWidth="md"
-        fullWidth
-      >
+      {/* MODAL: RESPONDER COTIZACIÓN */}
+      <Dialog open={openCotizacionModal} onClose={closeResponderCotizacion} maxWidth="md" fullWidth>
         <DialogTitle>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Typography variant="h6">
-              Valoración: {selectedValoracion && getVehicleInfo(selectedValoracion.vehiculoId)}
-            </Typography>
-            {selectedValoracion && (
-              <Chip
-                label={getEstadoLabel(selectedValoracion.estado)}
-                color={getEstadoColor(selectedValoracion.estado)}
-              />
-            )}
-          </Box>
+          Detalle de Cotización
         </DialogTitle>
-
         <DialogContent>
-          {selectedValoracion && (
+          {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+          {success && <Alert severity="success" sx={{ mb: 2 }}>{success}</Alert>}
+
+          {selectedCotizacion && (
             <>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                <strong>Fecha de valoración:</strong>{' '}
-                {new Date(selectedValoracion.fechaAsignacion).toLocaleDateString()}
-              </Typography>
+              <Alert severity="info" sx={{ mb: 2 }}>
+                Vehículo: <strong>{getVehicleInfo(selectedCotizacion.vehiculoId)}</strong>
+              </Alert>
 
-              {/* Barra de progreso de respuestas */}
-              {selectedValoracion.tareas && selectedValoracion.tareas.length > 0 && (
-                <Box sx={{ mb: 3 }}>
-                  {(() => {
-                    const estadisticas = contarTareasPorEstado(selectedValoracion.tareas);
-                    const porcentajeRespondido = Math.round(
-                      ((estadisticas.aceptadas + estadisticas.rechazadas) / estadisticas.total) * 100
-                    );
-
-                    return (
-                      <Paper sx={{ p: 2, backgroundColor: '#f5f5f5' }}>
-                        <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                          Progreso de Revisión
-                        </Typography>
-                        
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
-                          <Box sx={{ flex: 1, height: 8, backgroundColor: '#e0e0e0', borderRadius: 4, overflow: 'hidden' }}>
-                            <Box
-                              sx={{
-                                height: '100%',
-                                width: `${porcentajeRespondido}%`,
-                                backgroundColor: porcentajeRespondido === 100 ? '#4caf50' : '#2196f3',
-                                transition: 'width 0.3s ease',
-                              }}
-                            />
-                          </Box>
-                          <Typography variant="body2" sx={{ fontWeight: 'bold', minWidth: 50 }}>
-                            {porcentajeRespondido}%
-                          </Typography>
-                        </Box>
-
-                        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-                          <Chip
-                            label={`✅ Aceptadas: ${estadisticas.aceptadas}`}
-                            color="success"
-                            size="small"
-                            variant="outlined"
-                          />
-                          <Chip
-                            label={`❌ Rechazadas: ${estadisticas.rechazadas}`}
-                            color="error"
-                            size="small"
-                            variant="outlined"
-                          />
-                          <Chip
-                            label={`⏳ Pendientes: ${estadisticas.pendientes}`}
-                            color="warning"
-                            size="small"
-                            variant="outlined"
-                          />
-                        </Box>
-
-                        {estadisticas.pendientes === 0 && (
-                          <Alert severity="success" sx={{ mt: 2 }}>
-                            ✅ ¡Has completado tu revisión! El taller ya puede proceder.
-                          </Alert>
-                        )}
-                      </Paper>
-                    );
-                  })()}
-                </Box>
-              )}
-
-              {selectedValoracion.diagnostico && (
-                <Box sx={{ mb: 3 }}>
-                  <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 1 }}>
-                    Diagnóstico:
-                  </Typography>
-                  <Typography variant="body2">{selectedValoracion.diagnostico}</Typography>
-                </Box>
-              )}
-
-              <Divider sx={{ my: 2 }} />
-
-              <Typography variant="h6" sx={{ mb: 2 }}>
-                Tareas Propuestas por el Mecánico
-              </Typography>
-
-              {!selectedValoracion.tareas || selectedValoracion.tareas.length === 0 ? (
-                <Alert severity="info">
-                  El mecánico aún no ha agregado tareas a esta valoración.
-                </Alert>
+              <Typography variant="h6" gutterBottom>Reparaciones</Typography>
+              {(selectedCotizacion.items || []).length === 0 ? (
+                <Alert severity="warning">No hay reparaciones en la cotización.</Alert>
               ) : (
-                <List>
-                  {selectedValoracion.tareas.map((tarea, index) => (
-                    <Paper key={tarea.id} sx={{ p: 2, mb: 2 }}>
-                      <Box>
-                        <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
-                          {index + 1}. {tarea.nombre}
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                          {tarea.descripcion}
-                        </Typography>
-                        <Typography variant="h6" color="primary.main" sx={{ mt: 1 }}>
-                          ₡{tarea.precioEstimado.toLocaleString()}
-                        </Typography>
-
-                        {tarea.estado === 'propuesta' &&
-                         selectedValoracion.estado === 'pendiente_aprobacion_cliente' && (
-                          <Box sx={{ display: 'flex', gap: 1, mt: 2 }}>
-                            <Button
-                              variant="contained"
-                              color="success"
-                              startIcon={<CheckCircle />}
-                              onClick={() => handleResponderTarea(tarea.id, true)}
-                              disabled={loading}
-                              size="small"
-                            >
-                              Aceptar
-                            </Button>
-                            <Button
-                              variant="outlined"
-                              color="error"
-                              startIcon={<Cancel />}
-                              onClick={() => handleResponderTarea(tarea.id, false)}
-                              disabled={loading}
-                              size="small"
-                            >
-                              Rechazar
-                            </Button>
-                          </Box>
-                        )}
-
-                        {tarea.estado !== 'propuesta' && (
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                  {selectedCotizacion.items.map((it) => (
+                    <Paper key={it.id} sx={{ p: 2, borderRadius: 2 }} variant="outlined">
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap' }}>
+                        <Box>
+                          <Typography variant="subtitle1"><strong>{it.nombre}</strong></Typography>
+                          <Typography variant="body2" color="text.secondary">{it.descripcion}</Typography>
                           <Chip
-                            label={
-                              tarea.estado === 'aceptada'
-                                ? '✅ Aceptada'
-                                : '❌ Rechazada'
-                            }
-                            color={tarea.estado === 'aceptada' ? 'success' : 'error'}
+                            label={it.obligatorio ? 'Obligatoria' : 'Opcional'}
+                            color={it.obligatorio ? 'warning' : 'info'}
                             size="small"
-                            sx={{ mt: 2 }}
+                            sx={{ mt: 1 }}
                           />
+                        </Box>
+
+                        {!it.obligatorio ? (
+                          <FormControlLabel
+                            control={
+                              <Checkbox
+                                checked={!!selectedOpcionales[it.id]}
+                                onChange={(e) => toggleOpcional(it.id, e.target.checked)}
+                              />
+                            }
+                            label="Incluir"
+                          />
+                        ) : (
+                          <Chip label="Incluida" size="small" variant="outlined" />
                         )}
                       </Box>
-                    </Paper>
-                  ))}
-                </List>
-              )}
-
-              {selectedValoracion.tareas && selectedValoracion.tareas.length > 0 && (
-                <>
-                  <Paper sx={{ p: 2, mt: 2, backgroundColor: '#f5f5f5' }}>
-                    <Typography variant="h6">
-                      Costo Total: ₡{calcularCostoTotal(selectedValoracion.tareas).toLocaleString()}
-                    </Typography>
-                  </Paper>
-
-                  {selectedValoracion.estadoCliente !== 'pendiente_revision' && (
-                    <Paper sx={{ p: 2, mt: 2, backgroundColor: '#e8f5e9' }}>
-                      <Typography variant="h6" color="success.main">
-                        Tareas Aceptadas: ₡{calcularTareasAceptadas(selectedValoracion.tareas).toLocaleString()}
+                      <Typography variant="body2" sx={{ mt: 1 }}>
+                        Precio: <strong>₡{(it.precio || 0).toLocaleString()}</strong>
                       </Typography>
                     </Paper>
-                  )}
+                  ))}
+                </Box>
+              )}
+
+              {((selectedCotizacion.repuestos || []).length > 0) && (
+                <>
+                  <Divider sx={{ my: 2 }} />
+                  <Typography variant="h6" gutterBottom>Repuestos</Typography>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                    {selectedCotizacion.repuestos.map((r) => (
+                      <Paper key={r.id} sx={{ p: 2, borderRadius: 2 }} variant="outlined">
+                        <Typography variant="subtitle2"><strong>{r.nombre}</strong></Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          Cantidad: {r.cantidad} · Precio unitario: ₡{(r.precioUnitario || 0).toLocaleString()}
+                        </Typography>
+                        <Typography variant="body2">
+                          Total: <strong>₡{((r.cantidad || 0) * (r.precioUnitario || 0)).toLocaleString()}</strong>
+                        </Typography>
+                      </Paper>
+                    ))}
+                  </Box>
                 </>
               )}
 
-              {selectedValoracion.estado === 'pendiente_aprobacion_cliente' && (
-                <Alert severity="info" sx={{ mt: 3 }}>
-                  💡 Revisa cada tarea y acepta las que deseas realizar. El taller creará una orden de trabajo con las tareas aceptadas.
-                </Alert>
-              )}
+              <Divider sx={{ my: 2 }} />
+              <Alert severity="success">
+                Total seleccionado: <strong>₡{cotizacionTotal.toLocaleString()}</strong>
+              </Alert>
             </>
           )}
         </DialogContent>
-
         <DialogActions>
-          <Button onClick={handleCloseValoracionModal}>Cerrar</Button>
+          <Button onClick={closeResponderCotizacion} disabled={loading}>Cerrar</Button>
+          {selectedCotizacion?.estado === 'pendiente_aprobacion_cliente' && (
+            <>
+              <Button variant="outlined" color="error" onClick={rechazarCotizacion} disabled={loading}>
+                Rechazar
+              </Button>
+              <Button variant="contained" color="success" onClick={aceptarCotizacion} disabled={loading}>
+                Aprobar
+              </Button>
+            </>
+          )}
         </DialogActions>
       </Dialog>
     </Box>

@@ -24,8 +24,14 @@ export interface Vehicle {
   año: number;
   color?: string;
   clienteId: string;
+  workshopId?: string;
+  tallerOwnerId?: string;
+  // Estado de flujo del vehículo dentro del taller
+  estadoProceso?: 'pendiente_valoracion' | 'en_valoracion' | 'pendiente_cotizacion' | 'pendiente_aprobacion_cotizacion' | 'aprobado' | 'en_reparacion' | 'finalizado';
+  descripcionSolicitud?: string;
   trabajos: Trabajo[];
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface Trabajo {
@@ -46,6 +52,7 @@ export interface CreateVehicleData {
   clienteId: string;
   workshopId?: string;
   tallerOwnerId?: string;
+  descripcionSolicitud?: string;
 }
 
 export interface ApiResponse<T = any> {
@@ -65,7 +72,7 @@ class VehicleService {
    */
   async createVehicle(data: CreateVehicleData): Promise<ApiResponse<Vehicle>> {
     try {
-      const { placa, marca, modelo, año, color, clienteId } = data;
+      const { placa, marca, modelo, año, color, clienteId, workshopId, tallerOwnerId, descripcionSolicitud } = data;
 
       // 1. Validar campos requeridos
       if (!placa || !marca || !modelo || !año || !clienteId) {
@@ -106,17 +113,28 @@ class VehicleService {
       const vehicleRef = doc(collection(db, 'vehicles'));
       const vehicleId = vehicleRef.id;
 
+      const now = new Date().toISOString();
+
+      // Firestore no acepta valores `undefined`. Construir el objeto
+      // incluyendo solamente campos opcionales cuando vengan definidos.
       const newVehicle: Vehicle = {
         id: vehicleId,
         placa,
         marca,
         modelo,
         año: parseInt(año.toString()),
-        color,
         clienteId,
+        estadoProceso: 'pendiente_valoracion',
+        // Firestore no acepta `undefined`; guardar siempre string (vacío si no viene).
+        descripcionSolicitud: (descripcionSolicitud ?? ''),
         trabajos: [],
-        createdAt: new Date().toISOString(),
+        createdAt: now,
+        updatedAt: now,
       };
+
+      if (color !== undefined) newVehicle.color = color;
+      if (workshopId !== undefined) newVehicle.workshopId = workshopId;
+      if (tallerOwnerId !== undefined) newVehicle.tallerOwnerId = tallerOwnerId;
 
       await setDoc(vehicleRef, newVehicle);
 

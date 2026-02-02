@@ -15,7 +15,6 @@ import {
   arrayRemove,
 } from 'firebase/firestore';
 import { db } from '../config/firebase.config';
-import { ordenTrabajoService } from './ordenTrabajo.service';
 
 // ... (mantener todas las interfaces existentes)
 
@@ -29,7 +28,11 @@ export interface TareaValoracion {
   id: string;
   nombre: string;
   descripcion: string;
-  precioEstimado: number;
+  // En valoración NO se manejan precios (los precios se agregan en la cotización).
+  // Se deja como opcional por compatibilidad con versiones anteriores.
+  precioEstimado?: number;
+  // Indica si la reparación es obligatoria (true) u opcional (false)
+  obligatorio?: boolean;
   estado: 'propuesta' | 'aceptada' | 'rechazada';
   aceptadaPorCliente?: boolean;
   fechaRespuesta?: string;
@@ -39,11 +42,17 @@ export interface TareaValoracion {
 export interface Valoracion {
   id: string;
   vehiculoId: string;
-  mecanicoId: string;
+  // En el nuevo flujo el mecánico se asigna al "tomar" la valoración
+  mecanicoId?: string;
   tallerOwnerId: string;
   workshopId: string;
   fechaAsignacion: string;
-  estado: 'pendiente' | 'en_proceso' | 'completada' | 'pendiente_aprobacion_cliente';
+  // Estados clave del flujo
+  // - pendiente_valoracion: creada al ingresar el vehículo, visible para todos los mecánicos
+  // - en_proceso: un mecánico la tomó y está trabajando
+  // - completada: lista para que el administrador genere cotización
+  // - cotizada: el administrador ya generó la cotización
+  estado: 'pendiente_valoracion' | 'en_proceso' | 'completada' | 'cotizada' | 'pendiente' ;
   diagnostico?: string;
   problemasEncontrados?: string[];
   repuestosNecesarios?: RepuestoNecesario[];
@@ -59,13 +68,13 @@ export interface Valoracion {
 
 export interface CreateValoracionData {
   vehiculoId: string;
-  mecanicoId: string;
+  mecanicoId?: string;
   tallerOwnerId: string;
   workshopId: string;
 }
 
 export interface UpdateValoracionData {
-  estado?: 'pendiente' | 'en_proceso' | 'completada' | 'pendiente_aprobacion_cliente';
+  estado?: 'pendiente_valoracion' | 'en_proceso' | 'completada' | 'cotizada' | 'pendiente' ;
   diagnostico?: string;
   problemasEncontrados?: string[];
   repuestosNecesarios?: RepuestoNecesario[];
@@ -76,7 +85,7 @@ export interface UpdateValoracionData {
 export interface CreateTareaData {
   nombre: string;
   descripcion: string;
-  precioEstimado: number;
+  obligatorio: boolean;
 }
 
 export interface ApiResponse<T = any> {
@@ -103,13 +112,16 @@ class ValoracionService {
         };
       }
 
-      const mechnicDoc = await getDoc(doc(db, 'users', mecanicoId));
-      if (!mechnicDoc.exists() || mechnicDoc.data()?.role !== 'mechanic') {
-        return {
-          success: false,
-          message: 'Mecánico no encontrado',
-          error: 'MECHANIC_NOT_FOUND',
-        };
+      // Si se especifica un mecánico, validar que exista y sea role=mechanic
+      if (mecanicoId) {
+        const mechanicDoc = await getDoc(doc(db, 'users', mecanicoId));
+        if (!mechanicDoc.exists() || mechanicDoc.data()?.role !== 'mechanic') {
+          return {
+            success: false,
+            message: 'Mecánico no encontrado',
+            error: 'MECHANIC_NOT_FOUND',
+          };
+        }
       }
 
       const valoracionRef = doc(collection(db, 'valoraciones'));
@@ -118,14 +130,12 @@ class ValoracionService {
       const newValoracion: Valoracion = {
         id: valoracionId,
         vehiculoId,
-        mecanicoId,
+        ...(mecanicoId ? { mecanicoId } : {}),
         tallerOwnerId,
         workshopId,
         fechaAsignacion: new Date().toISOString(),
-        estado: 'pendiente',
-        tareas: [],
-        estadoCliente: 'pendiente_revision',
-        createdAt: new Date().toISOString(),
+        estado: mecanicoId ? 'en_proceso' : 'pendiente_valoracion',
+        tareas: [],        createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
 
@@ -163,7 +173,7 @@ class ValoracionService {
         id: `tarea_${Date.now()}`,
         nombre: tareaData.nombre,
         descripcion: tareaData.descripcion,
-        precioEstimado: tareaData.precioEstimado,
+        obligatorio: tareaData.obligatorio,
         estado: 'propuesta',
         aceptadaPorCliente: false,
         createdAt: new Date().toISOString(),
@@ -231,161 +241,76 @@ class ValoracionService {
     }
   }
 
-  async enviarACliente(valoracionId: string): Promise<ApiResponse> {
-    try {
-      const valoracionDoc = await getDoc(doc(db, 'valoraciones', valoracionId));
+  /**
+ * Finaliza una valoración (diagnóstico) para que el administrador pueda generar una cotización.
+ * En el flujo nuevo, la valoración NO se envía al cliente ni se aprueba/rechaza por el cliente.
+ */
+async finalizarValoracion(valoracionId: string): Promise<ApiResponse> {
+  try {
+    const valoracionDoc = await getDoc(doc(db, 'valoraciones', valoracionId));
 
-      if (!valoracionDoc.exists()) {
-        return {
-          success: false,
-          message: 'Valoración no encontrada',
-        };
-      }
-
-      const valoracion = valoracionDoc.data() as Valoracion;
-
-      if (valoracion.tareas.length === 0) {
-        return {
-          success: false,
-          message: 'Debe agregar al menos una tarea antes de enviar',
-        };
-      }
-
-      await updateDoc(doc(db, 'valoraciones', valoracionId), {
-        estado: 'pendiente_aprobacion_cliente',
-        estadoCliente: 'pendiente_revision',
-        updatedAt: new Date().toISOString(),
-      });
-
-      console.log('✅ Valoración enviada al cliente:', valoracionId);
-
-      return {
-        success: true,
-        message: 'Valoración enviada al cliente para aprobación',
-      };
-    } catch (error) {
-      console.error('❌ Error enviando valoración:', error);
+    if (!valoracionDoc.exists()) {
       return {
         success: false,
-        message: 'Error al enviar valoración',
+        message: 'Valoración no encontrada',
       };
     }
-  }
 
-  /**
+    const valoracion = valoracionDoc.data() as Valoracion;
+
+    if (!valoracion.tareas || valoracion.tareas.length === 0) {
+      return {
+        success: false,
+        message: 'Debe agregar al menos una tarea antes de finalizar',
+      };
+    }
+
+    await updateDoc(doc(db, 'valoraciones', valoracionId), {
+      estado: 'completada',
+      fechaCompletada: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+
+    console.log('✅ Valoración finalizada:', valoracionId);
+
+    return {
+      success: true,
+      message: 'Valoración finalizada. Lista para cotización.',
+    };
+  } catch (error) {
+    console.error('❌ Error finalizando valoración:', error);
+    return {
+      success: false,
+      message: 'Error al finalizar valoración',
+    };
+  }
+}
+
+/**
+ * Alias por compatibilidad con versiones anteriores.
+ * Antes: "enviar al cliente". Ahora: finaliza la valoración.
+ */
+async enviarACliente(valoracionId: string): Promise<ApiResponse> {
+  return this.finalizarValoracion(valoracionId);
+}/**
    * ⭐ ACTUALIZADO: Cliente acepta o rechaza tarea
    * Ahora crea OT AUTOMÁTICAMENTE cuando cliente responde la última tarea
    */
-  async responderTarea(
-    valoracionId: string,
-    tareaId: string,
-    aceptada: boolean
-  ): Promise<ApiResponse> {
-    try {
-      const valoracionDoc = await getDoc(doc(db, 'valoraciones', valoracionId));
-
-      if (!valoracionDoc.exists()) {
-        return {
-          success: false,
-          message: 'Valoración no encontrada',
-        };
-      }
-
-      const valoracion = valoracionDoc.data() as Valoracion;
-      const tareaIndex = valoracion.tareas.findIndex((t) => t.id === tareaId);
-
-      if (tareaIndex === -1) {
-        return {
-          success: false,
-          message: 'Tarea no encontrada',
-        };
-      }
-
-      // Actualizar tarea
-      valoracion.tareas[tareaIndex] = {
-        ...valoracion.tareas[tareaIndex],
-        estado: aceptada ? 'aceptada' : 'rechazada',
-        aceptadaPorCliente: aceptada,
-        fechaRespuesta: new Date().toISOString(),
-      };
-
-      // Calcular estadísticas
-      const tareasAceptadas = valoracion.tareas.filter((t) => t.estado === 'aceptada').length;
-      const tareasRechazadas = valoracion.tareas.filter((t) => t.estado === 'rechazada').length;
-      const tareasPendientes = valoracion.tareas.filter((t) => t.estado === 'propuesta').length;
-      const totalTareas = valoracion.tareas.length;
-
-      // Determinar estado
-      let estadoCliente: Valoracion['estadoCliente'] = 'pendiente_revision';
-      
-      if (tareasPendientes === 0) {
-        if (tareasAceptadas === totalTareas) {
-          estadoCliente = 'totalmente_aceptada';
-        } else if (tareasRechazadas === totalTareas) {
-          estadoCliente = 'rechazada';
-        } else if (tareasAceptadas > 0) {
-          estadoCliente = 'parcialmente_aceptada';
-        }
-      } else {
-        estadoCliente = 'revisada';
-      }
-
-      const updateData: any = {
-        tareas: valoracion.tareas,
-        estadoCliente,
-        updatedAt: new Date().toISOString(),
-      };
-
-      if (tareasPendientes === 0) {
-        updateData.fechaRevisionCliente = new Date().toISOString();
-      }
-
-      await updateDoc(doc(db, 'valoraciones', valoracionId), updateData);
-
-      console.log('✅ Tarea respondida:', tareaId);
-      console.log(`   Estado: ${estadoCliente}`);
-      console.log(`   Aceptadas: ${tareasAceptadas}/${totalTareas}`);
-      console.log(`   Pendientes: ${tareasPendientes}/${totalTareas}`);
-
-      // ⭐ CREAR OT AUTOMÁTICAMENTE si se cumplen las condiciones
-      let otCreated = false;
-      let otMessage = '';
-      
-      if (tareasPendientes === 0 && tareasAceptadas > 0) {
-        console.log('🤖 Cliente completó selección con tareas aceptadas - creando OT automática...');
-        
-        const otResult = await ordenTrabajoService.createOrdenAutomatica(valoracionId);
-        
-        if (otResult.success) {
-          otCreated = true;
-          otMessage = ` Se generó automáticamente la orden de trabajo ${otResult.data?.numeroOT}.`;
-        } else {
-          console.log('⚠️  No se pudo crear OT automática:', otResult.message);
-        }
-      }
-
-      return {
-        success: true,
-        message: (aceptada ? 'Tarea aceptada' : 'Tarea rechazada') + otMessage,
-        data: {
-          estadoCliente,
-          tareasAceptadas,
-          tareasRechazadas,
-          tareasPendientes,
-          todasRespondidas: tareasPendientes === 0,
-          otCreated, // ⭐ Indica si se creó OT
-        },
-      };
-    } catch (error) {
-      console.error('❌ Error respondiendo tarea:', error);
-      return {
-        success: false,
-        message: 'Error al responder tarea',
-      };
-    }
-  }
-
-  // ... (mantener todos los métodos get existentes)
+  /**
+ * DEPRECADO en el flujo nuevo.
+ * La aprobación/rechazo es sobre la COTIZACIÓN (hecha por el administrador), no sobre la valoración.
+ */
+async responderTarea(
+  _valoracionId: string,
+  _tareaId: string,
+  _aceptada: boolean
+): Promise<ApiResponse> {
+  return {
+    success: false,
+    message: 'La aprobación por tareas ya no aplica. El cliente debe aprobar/rechazar la cotización.',
+    error: 'DEPRECATED_FLOW',
+  };
+}// ... (mantener todos los métodos get existentes)
 
   async getValoracionesByMecanico(mecanicoId: string): Promise<ApiResponse<Valoracion[]>> {
     try {
@@ -450,6 +375,70 @@ class ValoracionService {
         message: 'Error al obtener valoraciones',
         data: [],
       };
+    }
+  }
+
+  /**
+   * ⭐ Valoraciones disponibles para cualquier mecánico del taller
+   * Creadas cuando se registra el ingreso del vehículo.
+   */
+  async getValoracionesDisponibles(workshopId: string): Promise<ApiResponse<Valoracion[]>> {
+    try {
+      const q = query(
+        collection(db, 'valoraciones'),
+        where('workshopId', '==', workshopId),
+        where('estado', '==', 'pendiente_valoracion')
+      );
+
+      const querySnapshot = await getDocs(q);
+      const valoraciones: Valoracion[] = [];
+
+      querySnapshot.forEach((d) => {
+        valoraciones.push({ id: d.id, ...d.data() } as Valoracion);
+      });
+
+      valoraciones.sort((a, b) =>
+        new Date(b.fechaAsignacion).getTime() - new Date(a.fechaAsignacion).getTime()
+      );
+
+      return { success: true, message: 'Valoraciones disponibles', data: valoraciones };
+    } catch (error) {
+      console.error('❌ Error obteniendo valoraciones disponibles:', error);
+      return { success: false, message: 'Error al obtener valoraciones disponibles', data: [] };
+    }
+  }
+
+  /**
+   * ⭐ Un mecánico "toma" una valoración disponible
+   */
+  async tomarValoracion(valoracionId: string, mecanicoId: string): Promise<ApiResponse> {
+    try {
+      const valDoc = await getDoc(doc(db, 'valoraciones', valoracionId));
+      if (!valDoc.exists()) {
+        return { success: false, message: 'Valoración no encontrada' };
+      }
+
+      const val = valDoc.data() as any;
+      if (val.estado !== 'pendiente_valoracion') {
+        return { success: false, message: 'Esta valoración ya fue tomada por otro mecánico' };
+      }
+
+      // Validar mecánico
+      const mechanicDoc = await getDoc(doc(db, 'users', mecanicoId));
+      if (!mechanicDoc.exists() || mechanicDoc.data()?.role !== 'mechanic') {
+        return { success: false, message: 'Mecánico no encontrado' };
+      }
+
+      await updateDoc(doc(db, 'valoraciones', valoracionId), {
+        mecanicoId,
+        estado: 'en_proceso',
+        updatedAt: new Date().toISOString(),
+      } as any);
+
+      return { success: true, message: 'Valoración tomada exitosamente' };
+    } catch (error) {
+      console.error('❌ Error tomando valoración:', error);
+      return { success: false, message: 'Error al tomar valoración' };
     }
   }
 

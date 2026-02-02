@@ -4,7 +4,9 @@ import {
   signInWithEmailAndPassword,
   signOut,
   createUserWithEmailAndPassword,
+  getAuth,
 } from 'firebase/auth';
+import { initializeApp, getApps } from 'firebase/app';
 import {
   collection,
   doc,
@@ -14,7 +16,7 @@ import {
   query,
   where,
 } from 'firebase/firestore';
-import { auth, db } from '../config/firebase.config';
+import { auth, db, firebaseConfig } from '../config/firebase.config';
 
 // ============================================
 // INTERFACES
@@ -258,8 +260,18 @@ class AuthService {
   ): Promise<ApiResponse<User>> {
     try {
       // 1. Crear usuario en Firebase Auth
+      // IMPORTANTE:
+      // - createUserWithEmailAndPassword(auth, ...) cambia la sesión actual (firma como el nuevo usuario).
+      // - Eso rompe el flujo del administrador (pierde permisos y falla la creación de vehículo/valoración/etc.).
+      // Solución: usar un Auth secundario (app secundaria) para crear cuentas sin afectar la sesión activa.
+
+      const SECONDARY_APP_NAME = 'secondary-auth';
+      const existing = getApps().find((a) => a.name === SECONDARY_APP_NAME);
+      const secondaryApp = existing ?? initializeApp(firebaseConfig, SECONDARY_APP_NAME);
+      const secondaryAuth = getAuth(secondaryApp);
+
       const userCredential = await createUserWithEmailAndPassword(
-        auth,
+        secondaryAuth,
         email,
         password
       );
@@ -279,6 +291,9 @@ class AuthService {
       );
 
       await setDoc(doc(db, 'users', userId), userToSave);
+
+      // 3. Cerrar sesión del auth secundario para evitar dejar credenciales vivas
+      await signOut(secondaryAuth);
 
       console.log('✅ Usuario creado en Firebase:', newUser.email);
 

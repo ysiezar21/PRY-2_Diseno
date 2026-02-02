@@ -45,7 +45,9 @@ export interface OrdenTrabajo {
   mecanicoAsignado: boolean; // ⭐ Indica si ya tiene mecánico
   tallerOwnerId: string;
   workshopId: string;
-  valoracionId: string;
+  // Referencia del origen (según el flujo)
+  valoracionId?: string;
+  cotizacionId?: string;
   tareasAprobadas: TareaOrdenTrabajo[];
   fechaCreacion: string; // Cuando se creó (automáticamente)
   fechaAsignacion?: string; // Cuando se asignó mecánico
@@ -77,6 +79,7 @@ export interface CreateOrdenTrabajoData {
   tallerOwnerId: string;
   workshopId: string;
   valoracionId?: string;
+  cotizacionId?: string;
   prioridad: 'baja' | 'media' | 'alta' | 'urgente';
   descripcion: string;
   estado?: 'pendiente_asignacion' | 'asignada';
@@ -228,13 +231,13 @@ async createOrdenAutomatica(
       id: tarea.id,
       nombre: tarea.nombre,
       descripcion: tarea.descripcion,
-      precioEstimado: tarea.precioEstimado,
+      precioEstimado: tarea.precioEstimado ?? 0,
       completada: false,
     }));
 
     // 8. Calcular costo
     const costoTotal = tareasAceptadas.reduce(
-      (sum: number, tarea: TareaValoracion) => sum + tarea.precioEstimado,
+      (sum: number, tarea: TareaValoracion) => sum + (tarea.precioEstimado ?? 0),
       0
     );
 
@@ -301,6 +304,94 @@ async createOrdenAutomatica(
     };
   }
 }
+
+  /**
+   * ⭐ CREAR OT DESDE COTIZACIÓN aprobada por el cliente
+   * - Lee la cotización
+   * - Toma todas las reparaciones obligatorias + opcionales seleccionadas
+   * - Crea OT SIN mecánico asignado
+   */
+  async createOrdenDesdeCotizacion(cotizacionId: string): Promise<ApiResponse<OrdenTrabajo>> {
+    try {
+      const cotDoc = await getDoc(doc(db, 'cotizaciones', cotizacionId));
+      if (!cotDoc.exists()) {
+        return { success: false, message: 'Cotización no encontrada', error: 'COTIZACION_NOT_FOUND' };
+      }
+
+      const cot: any = cotDoc.data();
+
+      // Evitar duplicados
+      const existingOTQuery = query(
+        collection(db, 'ordenesTrabajo'),
+        where('cotizacionId', '==', cotizacionId)
+      );
+      const existingOTSnapshot = await getDocs(existingOTQuery);
+      if (!existingOTSnapshot.empty) {
+        return { success: false, message: 'Ya existe una orden de trabajo para esta cotización', error: 'OT_ALREADY_EXISTS' };
+      }
+
+      // Validar vehículo
+      const vehicleDoc = await getDoc(doc(db, 'vehicles', cot.vehiculoId));
+      if (!vehicleDoc.exists()) {
+        return { success: false, message: 'Vehículo no encontrado', error: 'VEHICLE_NOT_FOUND' };
+      }
+
+      const numeroOT = await this.generateNumeroOT(cot.workshopId);
+
+      const seleccionados: string[] = cot.itemsOpcionalesSeleccionados || [];
+      const items = cot.items || [];
+
+      const itemsIncluidos = items.filter((it: any) => it.obligatorio === true || seleccionados.includes(it.id));
+      if (itemsIncluidos.length === 0) {
+        return { success: false, message: 'No hay reparaciones seleccionadas', error: 'NO_SELECTED_ITEMS' };
+      }
+
+      const tareasOrden: TareaOrdenTrabajo[] = itemsIncluidos.map((it: any) => ({
+        id: it.id,
+        nombre: it.nombre,
+        descripcion: it.descripcion,
+        precioEstimado: it.precio,
+        completada: false,
+      }));
+
+      // Costos
+      const totalItems = itemsIncluidos.reduce((s: number, it: any) => s + (it.precio || 0), 0);
+      const totalRepuestos = (cot.repuestos || []).reduce((s: number, r: any) => s + (r.precioUnitario || 0) * (r.cantidad || 0), 0);
+      const costoTotal = totalItems + totalRepuestos;
+
+      const ordenRef = doc(collection(db, 'ordenesTrabajo'));
+      const ordenId = ordenRef.id;
+      const now = new Date().toISOString();
+
+      const ordenData: any = {
+        id: ordenId,
+        numeroOT,
+        vehiculoId: cot.vehiculoId,
+        mecanicoAsignado: false,
+        tallerOwnerId: cot.tallerOwnerId,
+        workshopId: cot.workshopId,
+        cotizacionId,
+        valoracionId: cot.valoracionId,
+        tareasAprobadas: tareasOrden,
+        fechaCreacion: now,
+        estado: 'pendiente_asignacion',
+        prioridad: 'media',
+        descripcion: `Orden generada desde cotización. Incluye ${itemsIncluidos.length} reparaciones.`,
+        trabajosRealizados: [],
+        repuestosUsados: [],
+        costoTotal,
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      await setDoc(ordenRef, ordenData);
+
+      return { success: true, message: 'Orden de trabajo creada', data: ordenData as OrdenTrabajo };
+    } catch (error: any) {
+      console.error('❌ Error creando OT desde cotización:', error);
+      return { success: false, message: 'Error al crear OT desde cotización', error: error?.message || 'SERVER_ERROR' };
+    }
+  }
   /**
    * ⭐ CREAR ORDEN DE TRABAJO MANUALMENTE (para casos especiales)
    * Esta función permite al jefe del taller crear una OT manualmente
@@ -490,13 +581,13 @@ async createOrdenAutomatica(
         id: tarea.id,
         nombre: tarea.nombre,
         descripcion: tarea.descripcion,
-        precioEstimado: tarea.precioEstimado,
+        precioEstimado: tarea.precioEstimado ?? 0,
         completada: false,
       }));
 
       // 6. Calcular costo total
       const costoTotal = tareasAceptadas.reduce(
-        (sum: number, tarea: TareaValoracion) => sum + tarea.precioEstimado,
+        (sum: number, tarea: TareaValoracion) => sum + (tarea.precioEstimado ?? 0),
         0
       );
 

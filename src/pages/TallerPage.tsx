@@ -28,6 +28,7 @@ import {
   Grid,
   Card,
   CardContent,
+  CardActions,
   List,
   ListItem,
   FormControl,
@@ -36,6 +37,8 @@ import {
   InputAdornment,
   Tooltip,
   Badge,
+  FormControlLabel,
+  Switch,
 } from '@mui/material';
 import { useAuthContext } from '../contexts/AuthContext';
 import {
@@ -46,7 +49,6 @@ import {
   Assessment,
   Delete,
   Add,
-  CheckCircle,
   AttachMoney,
   Task,
   Build,
@@ -57,6 +59,7 @@ import { mechanicService } from '../api/services/mechanic.service';
 import { clientService } from '../api/services/client.service';
 import { vehicleService } from '../api/services/vehicle.service';
 import { valoracionService } from '../api/services/valoracion.service';
+import { cotizacionService, type Cotizacion, type ItemCotizacion, type RepuestoCotizacion } from '../api/services/cotizacion.service';
 import { ordenTrabajoService, type OrdenTrabajo as OrdenTrabajoServiceType, type TareaOrdenTrabajo } from '../api/services/ordenTrabajo.service';
 
 interface CreateMechanicData {
@@ -88,7 +91,10 @@ interface TareaValoracion {
   id: string;
   nombre: string;
   descripcion: string;
-  precioEstimado: number;
+  // En valoración no se manejan precios; se deja opcional por compatibilidad.
+  precioEstimado?: number;
+  // true = obligatoria, false = opcional
+  obligatorio?: boolean;
   estado: 'propuesta' | 'aceptada' | 'rechazada';
   completada?: boolean;
 }
@@ -96,7 +102,7 @@ interface TareaValoracion {
 interface Valoracion {
   id: string;
   vehiculoId: string;
-  mecanicoId: string;
+  mecanicoId?: string;
   workshopId: string;
   estado: string;
   estadoCliente?: string;
@@ -125,6 +131,7 @@ const TallerPage = () => {
   const [clients, setClients] = useState<any[]>([]);
   const [vehicles, setVehicles] = useState<any[]>([]);
   const [valoraciones, setValoraciones] = useState<Valoracion[]>([]);
+  const [cotizaciones, setCotizaciones] = useState<Cotizacion[]>([]);
   const [ordenesTrabajo, setOrdenesTrabajo] = useState<OrdenTrabajo[]>([]);
   const [loadingData, setLoadingData] = useState(false);
 
@@ -133,14 +140,20 @@ const TallerPage = () => {
   const [openClientModal, setOpenClientModal] = useState(false);
   const [openAddVehicleToClientModal, setOpenAddVehicleToClientModal] = useState(false);
   const [openValoracionModal, setOpenValoracionModal] = useState(false);
+  const [openCotizacionModal, setOpenCotizacionModal] = useState(false);
   const [openOTModal, setOpenOTModal] = useState(false);
   
-  // Modal crear OT desde valoración
-  const [openCreateOTModal, setOpenCreateOTModal] = useState(false);
+  // Modal: cotización (desde valoración completada)
   const [selectedValoracion, setSelectedValoracion] = useState<Valoracion | null>(null);
-  const [mecanicoSeleccionado, setMecanicoSeleccionado] = useState('');
-  const [prioridad, setPrioridad] = useState<'baja' | 'media' | 'alta' | 'urgente'>('media');
-  const [observaciones, setObservaciones] = useState('');
+  const [cotizacionItems, setCotizacionItems] = useState<ItemCotizacion[]>([]);
+  const [cotizacionRepuestos, setCotizacionRepuestos] = useState<RepuestoCotizacion[]>([]);
+
+  // Modal: asignar mecánico a una OT ya creada (flujo desde cotización)
+  const [openAsignarOTModal, setOpenAsignarOTModal] = useState(false);
+  const [selectedOT, setSelectedOT] = useState<OrdenTrabajo | null>(null);
+  const [asignarMecanicoId, setAsignarMecanicoId] = useState('');
+  const [asignarPrioridad, setAsignarPrioridad] = useState<'baja' | 'media' | 'alta' | 'urgente'>('media');
+  const [asignarObservaciones, setAsignarObservaciones] = useState('');
 
   // Estados para añadir vehículo a cliente existente
   const [selectedClientForVehicle, setSelectedClientForVehicle] = useState<any>(null);
@@ -199,6 +212,7 @@ const TallerPage = () => {
       loadClients(),
       loadVehicles(),
       loadValoraciones(),
+      loadCotizaciones(),
       loadOrdenesTrabajo(),
     ]);
   };
@@ -258,6 +272,18 @@ const TallerPage = () => {
       console.error('Error cargando valoraciones:', err);
     } finally {
       setLoadingData(false);
+    }
+  };
+
+  const loadCotizaciones = async () => {
+    if (!user?.workshopId) return;
+    try {
+      const result = await cotizacionService.getCotizacionesByWorkshop(user.workshopId);
+      if (result.success && result.data) {
+        setCotizaciones(result.data);
+      }
+    } catch (err) {
+      console.error('Error cargando cotizaciones:', err);
     }
   };
 
@@ -327,13 +353,21 @@ const TallerPage = () => {
         color: newVehicleFormData.color || undefined,
         clienteId: selectedClientForVehicle.id,
         workshopId: user.workshopId,
+        tallerOwnerId: user.id,
       };
 
       const result = await vehicleService.createVehicle(vehicleData);
 
-      if (result.success) {
-        setSuccess(`¡Vehículo ${newVehicleFormData.placa} agregado exitosamente al cliente ${selectedClientForVehicle.nombre_completo}!`);
-        await loadVehicles();
+      if (result.success && result.data) {
+        // ⭐ Crear la valoración automáticamente (sin mecánico asignado)
+        await valoracionService.createValoracion({
+          vehiculoId: result.data.id,
+          tallerOwnerId: user.id,
+          workshopId: user.workshopId,
+        });
+
+        setSuccess(`¡Vehículo ${newVehicleFormData.placa} agregado exitosamente! Se generó una valoración pendiente.`);
+        await Promise.all([loadVehicles(), loadValoraciones()]);
         setTimeout(() => {
           handleCloseAddVehicleToClientModal();
         }, 2000);
@@ -507,14 +541,22 @@ const TallerPage = () => {
             color: clientFormData.vehiculo.color || undefined,
             clienteId: clienteId,
             workshopId: user.workshopId,
+            tallerOwnerId: user.id,
           };
 
           // Crear el vehículo
           const vehiculoResult = await vehicleService.createVehicle(vehiculoData);
           
-          if (vehiculoResult.success) {
-            setSuccess('¡Cliente y vehículo creados exitosamente!');
-            await Promise.all([loadClients(), loadVehicles()]);
+          if (vehiculoResult.success && vehiculoResult.data) {
+            // ⭐ Crear la valoración automáticamente (sin mecánico asignado)
+            await valoracionService.createValoracion({
+              vehiculoId: vehiculoResult.data.id,
+              tallerOwnerId: user.id,
+              workshopId: user.workshopId,
+            });
+
+            setSuccess('¡Cliente y vehículo creados exitosamente! Se generó una valoración pendiente.');
+            await Promise.all([loadClients(), loadVehicles(), loadValoraciones()]);
           } else {
             setError(`Cliente creado pero error en vehículo: ${vehiculoResult.message}`);
           }
@@ -570,13 +612,14 @@ const TallerPage = () => {
     try {
       const result = await valoracionService.createValoracion({
         vehiculoId: valoracionFormData.vehiculoId,
-        mecanicoId: valoracionFormData.mecanicoId,
+        // En el flujo nuevo NO se asigna mecánico aquí. La valoración queda disponible
+        // para que cualquier mecánico la tome.
         tallerOwnerId: user.id,
         workshopId: user.workshopId,
       });
 
       if (result.success) {
-        setSuccess('¡Valoración asignada exitosamente!');
+        setSuccess('¡Valoración creada exitosamente! Ahora está disponible para todos los mecánicos.');
         await loadValoraciones();
         setTimeout(() => {
           handleCloseValoracionModal();
@@ -585,134 +628,107 @@ const TallerPage = () => {
         setError(result.message);
       }
     } catch (err) {
-      setError('Error al asignar valoración. Intenta de nuevo.');
+      setError('Error al crear valoración. Intenta de nuevo.');
     } finally {
       setLoading(false);
     }
   };
 
-  // ========== GESTIÓN DE ORDENES DE TRABAJO DESDE VALORACIONES ==========
+  // ========== COTIZACIONES (desde valoración completada) ==========
 
-  const handleOpenCreateOT = (valoracion: Valoracion) => {
+  const handleOpenCotizacionModal = (valoracion: Valoracion) => {
     setSelectedValoracion(valoracion);
-    
-    // Verificar si ya existe OT para esta valoración
-    const ordenExistente = getOrdenByValoracionId(valoracion.id);
-    
-    if (ordenExistente) {
-      // Si existe y está pendiente de asignación, pre-seleccionar el mecánico de la valoración
-      if (ordenExistente.estado === 'pendiente_asignacion' && !ordenExistente.mecanicoAsignado) {
-        setMecanicoSeleccionado(valoracion.mecanicoId);
-      } else if (ordenExistente.mecanicoId) {
-        setMecanicoSeleccionado(ordenExistente.mecanicoId);
-      }
-    } else {
-      // Si no existe OT, pre-seleccionar el mecánico de la valoración
-      setMecanicoSeleccionado(valoracion.mecanicoId);
-    }
-    
-    setPrioridad('media');
-    setObservaciones('');
-    setOpenCreateOTModal(true);
+    const items: ItemCotizacion[] = (valoracion.tareas || []).map((t) => ({
+      id: t.id,
+      nombre: t.nombre,
+      descripcion: t.descripcion,
+      obligatorio: t.obligatorio === true,
+      precio: 0,
+    }));
+    setCotizacionItems(items);
+    setCotizacionRepuestos([]);
+    setOpenCotizacionModal(true);
+    setError(null);
+    setSuccess(null);
   };
 
-  const handleCloseCreateOTModal = () => {
-    setOpenCreateOTModal(false);
+  const handleCloseCotizacionModal = () => {
+    setOpenCotizacionModal(false);
     setSelectedValoracion(null);
-    setMecanicoSeleccionado('');
-    setPrioridad('media');
-    setObservaciones('');
+    setCotizacionItems([]);
+    setCotizacionRepuestos([]);
   };
 
-  const getOrdenByValoracionId = (valoracionId: string): OrdenTrabajo | undefined => {
-    return ordenesTrabajo.find(ot => ot.valoracionId === valoracionId);
+  const updateItemPrecio = (itemId: string, precio: number) => {
+    setCotizacionItems(prev => prev.map(i => i.id === itemId ? { ...i, precio: precio || 0 } : i));
   };
 
-  const handleCreateOrdenTrabajo = async () => {
-  if (!selectedValoracion || !mecanicoSeleccionado || !user?.id || !user?.workshopId) {
-    setError('Faltan datos necesarios');
-    return;
-  }
+  const updateItemObligatorio = (itemId: string, obligatorio: boolean) => {
+    setCotizacionItems(prev => prev.map(i => i.id === itemId ? { ...i, obligatorio } : i));
+  };
 
-  setLoading(true);
-  setError(null);
+  const addRepuesto = () => {
+    setCotizacionRepuestos(prev => [...prev, { id: `rep_${Date.now()}`, nombre: '', cantidad: 1, precioUnitario: 0 }]);
+  };
 
-  try {
-    // Verificar si ya existe una OT para esta valoración
-    const ordenExistente = getOrdenByValoracionId(selectedValoracion.id);
+  const updateRepuesto = (id: string, field: keyof RepuestoCotizacion, value: any) => {
+    setCotizacionRepuestos(prev => prev.map(r => r.id === id ? { ...r, [field]: value } : r));
+  };
 
-    if (ordenExistente) {
-      // Si existe OT pero está pendiente de asignación, asignar mecánico
-      if (ordenExistente.estado === 'pendiente_asignacion' && !ordenExistente.mecanicoAsignado) {
-        const result = await ordenTrabajoService.asignarMecanico(ordenExistente.id, {
-          mecanicoId: mecanicoSeleccionado,
-          prioridad,
-          observaciones,
-        });
+  const removeRepuesto = (id: string) => {
+    setCotizacionRepuestos(prev => prev.filter(r => r.id !== id));
+  };
 
-        if (result.success) {
-          setSuccess(`✅ Mecánico asignado a la orden ${ordenExistente.numeroOT}`);
-          
-          // ⭐ Recargar datos para actualizar la UI
-          await Promise.all([
-            loadOrdenesTrabajo(),
-            loadValoraciones() // Recargar valoraciones
-          ]);
-          
-          handleCloseCreateOTModal();
-          
-          setTimeout(() => {
-            setSuccess(null);
-            setCurrentTab(3);
-          }, 2000);
-        } else {
-          setError(result.message || 'Error al asignar mecánico');
-        }
-      } else {
-        setError('Esta orden ya tiene un mecánico asignado');
-      }
-    } else {
-      // Si no existe OT, crear una automáticamente primero
-      // 1. Crear OT automática (sin mecánico asignado)
-      const resultAutomatica = await ordenTrabajoService.createOrdenAutomatica(selectedValoracion.id);
-
-      if (resultAutomatica.success && resultAutomatica.data) {
-        // 2. Asignar mecánico inmediatamente
-        const resultAsignacion = await ordenTrabajoService.asignarMecanico(resultAutomatica.data.id, {
-          mecanicoId: mecanicoSeleccionado,
-          prioridad,
-          observaciones,
-        });
-
-        if (resultAsignacion.success) {
-          setSuccess(`✅ Orden de trabajo ${resultAutomatica.data.numeroOT} creada y asignada al mecánico`);
-          
-          // ⭐ Recargar datos para actualizar la UI
-          await Promise.all([
-            loadOrdenesTrabajo(),
-            loadValoraciones() // Recargar valoraciones (la eliminada ya no aparecerá)
-          ]);
-          
-          handleCloseCreateOTModal();
-          
-          setTimeout(() => {
-            setSuccess(null);
-            setCurrentTab(3);
-          }, 2000);
-        } else {
-          setError(`Orden creada pero error al asignar mecánico: ${resultAsignacion.message}`);
-        }
-      } else {
-        setError(resultAutomatica.message || 'Error al crear orden automática');
-      }
+  const handleSubmitCotizacion = async () => {
+    if (!selectedValoracion || !user?.id || !user?.workshopId) {
+      setError('Faltan datos necesarios');
+      return;
     }
-  } catch (err: any) {
-    console.error('Error al procesar orden:', err);
-    setError(err.message || 'Error al procesar la orden de trabajo');
-  } finally {
-    setLoading(false);
-  }
-};
+
+    const vehicle = getVehicleById(selectedValoracion.vehiculoId);
+    if (!vehicle) {
+      setError('No se encontró el vehículo de la valoración');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const repuestosValidos = cotizacionRepuestos
+        .filter(r => r.nombre.trim() !== '')
+        .map(r => ({ ...r, cantidad: Number(r.cantidad) || 1, precioUnitario: Number(r.precioUnitario) || 0 }));
+
+      const result = await cotizacionService.createCotizacion({
+        vehiculoId: selectedValoracion.vehiculoId,
+        clienteId: vehicle.clienteId,
+        valoracionId: selectedValoracion.id,
+        tallerOwnerId: user.id,
+        workshopId: user.workshopId,
+        items: cotizacionItems.map(i => ({ ...i, precio: Number(i.precio) || 0 })),
+        repuestos: repuestosValidos,
+      });
+
+      if (result.success) {
+        setSuccess('✅ Cotización creada y enviada al cliente para aprobación');
+        await Promise.all([loadCotizaciones(), loadValoraciones()]);
+        handleCloseCotizacionModal();
+      } else {
+        setError(result.message || 'Error al crear cotización');
+      }
+    } catch (err: any) {
+      console.error('Error creando cotización:', err);
+      setError(err.message || 'Error al crear cotización');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getCotizacionByValoracionId = (valoracionId: string): Cotizacion | undefined => {
+    return cotizaciones.find(c => c.valoracionId === valoracionId);
+  };
+
+  const getVehicleById = (vehicleId: string) => vehicles.find(v => v.id === vehicleId);
 
   // ========== CREAR ORDEN DE TRABAJO MANUAL (sin valoración) ==========
 
@@ -763,6 +779,61 @@ const TallerPage = () => {
     }
   };
 
+  // ========== ASIGNAR MECÁNICO A OT (flujo desde cotización) ==========
+
+  const handleOpenAsignarOTModal = (ot: OrdenTrabajo) => {
+    setSelectedOT(ot);
+    setAsignarMecanicoId('');
+    setAsignarPrioridad((ot.prioridad as any) || 'media');
+    setAsignarObservaciones(ot.observaciones || '');
+    setOpenAsignarOTModal(true);
+    setError(null);
+    setSuccess(null);
+  };
+
+  const handleCloseAsignarOTModal = () => {
+    setOpenAsignarOTModal(false);
+    setSelectedOT(null);
+    setAsignarMecanicoId('');
+    setAsignarPrioridad('media');
+    setAsignarObservaciones('');
+    setError(null);
+    setSuccess(null);
+  };
+
+  const handleAsignarOT = async () => {
+    if (!selectedOT) return;
+    if (!asignarMecanicoId) {
+      setError('Debes seleccionar un mecánico.');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const res = await ordenTrabajoService.asignarMecanico(selectedOT.id, {
+        mecanicoId: asignarMecanicoId,
+        prioridad: asignarPrioridad,
+        observaciones: asignarObservaciones,
+      });
+
+      if (res.success) {
+        setSuccess('✅ Mecánico asignado correctamente.');
+        await loadOrdenesTrabajo();
+        setTimeout(() => handleCloseAsignarOTModal(), 800);
+      } else {
+        setError(res.message || 'Error asignando mecánico');
+      }
+    } catch (err: any) {
+      console.error(err);
+      setError('Error asignando mecánico a la orden.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Helpers
   const getClientName = (clientId: string) => {
     const client = clients.find((c) => c.id === clientId);
@@ -794,6 +865,9 @@ const TallerPage = () => {
       case 'asignada':
         return 'warning';
       case 'pendiente_aprobacion_cliente':
+        // Estado legado: antes la valoración esperaba aprobación del cliente.
+        // En el flujo nuevo se trata como 'completada' (lista para cotizar).
+        return 'success';
       case 'pendiente_asignacion':
         return 'info';
       case 'pendiente':
@@ -822,29 +896,6 @@ const TallerPage = () => {
     }
   };
 
-  const contarTareasAceptadas = (valoracion: Valoracion) => {
-    if (!valoracion.tareas || valoracion.tareas.length === 0) return 0;
-    return valoracion.tareas.filter((t) => t.estado === 'aceptada').length;
-  };
-
-  const calcularCostoAceptado = (valoracion: Valoracion) => {
-    if (!valoracion.tareas || valoracion.tareas.length === 0) return 0;
-    return valoracion.tareas
-      .filter((t) => t.estado === 'aceptada')
-      .reduce((sum, t) => sum + t.precioEstimado, 0);
-  };
-
-  const puedeCrearOT = (valoracion: Valoracion) => {
-    const tareasAceptadas = contarTareasAceptadas(valoracion);
-    const estadoValido = valoracion.estadoCliente === 'totalmente_aceptada' || 
-                        valoracion.estadoCliente === 'parcialmente_aceptada';
-    const yaExisteOT = ordenesTrabajo.some(ot => ot.valoracionId === valoracion.id);
-    
-    return estadoValido && tareasAceptadas > 0 && !yaExisteOT;
-  };
-
-
-
   const getOrdenesPendientesAsignacion = () => {
     return ordenesTrabajo.filter(ot => 
       ot.estado === 'pendiente_asignacion' && !ot.mecanicoAsignado
@@ -853,7 +904,11 @@ const TallerPage = () => {
 
   // Funciones para calcular estadísticas
   const getValoracionesPendientes = () => {
-    return valoraciones.filter(v => v.estado === 'pendiente' || v.estado === 'pendiente_aprobacion_cliente').length;
+    return valoraciones.filter(v =>
+      v.estado === 'pendiente_valoracion' ||
+      v.estado === 'en_proceso' ||
+      v.estado === 'completada'
+    ).length;
   };
 
 
@@ -1221,15 +1276,16 @@ const TallerPage = () => {
         {currentTab === 2 && (
           <Box sx={{ p: 3 }}>
             <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
-              <Button 
-                variant="contained" 
-                startIcon={<Add />} 
+              <Button
+                variant="outlined"
+                startIcon={<Add />}
                 onClick={handleOpenValoracionModal}
                 sx={{ borderRadius: 2 }}
               >
-                Asignar Valoración
+                Crear valoración
               </Button>
             </Box>
+
 
             {loadingData ? (
               <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
@@ -1237,14 +1293,12 @@ const TallerPage = () => {
               </Box>
             ) : valoraciones.length === 0 ? (
               <Alert severity="info">
-                No hay valoraciones asignadas.
+                No hay valoraciones registradas.
               </Alert>
             ) : (
               <Grid container spacing={3}>
                 {valoraciones.map((valoracion) => {
-                  const ordenExistente = getOrdenByValoracionId(valoracion.id);
-                  const tareasAceptadas = contarTareasAceptadas(valoracion);
-                  const puedeCrearOrden = puedeCrearOT(valoracion);
+                  const cotizacionExistente = getCotizacionByValoracionId(valoracion.id);
                   
                   return (
                     <Grid item xs={12} md={6} key={valoracion.id}>
@@ -1255,89 +1309,82 @@ const TallerPage = () => {
                               <DirectionsCar />
                               {getVehicleInfo(valoracion.vehiculoId)}
                             </Typography>
-                            <Box sx={{ display: 'flex', gap: 1 }}>
+                            <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                               <Chip 
                                 label={valoracion.estado} 
                                 color={getEstadoColor(valoracion.estado)} 
                                 size="small" 
                               />
-                              {valoracion.estadoCliente && (
+                              {cotizacionExistente && (
                                 <Chip
-                                  label={valoracion.estadoCliente.replace(/_/g, ' ')}
-                                  color={getEstadoColor(valoracion.estadoCliente)}
+                                  label={`cotización: ${cotizacionExistente.estado}`}
+                                  color={cotizacionExistente.estado === 'pendiente_aprobacion_cliente' ? 'warning' : cotizacionExistente.estado === 'aprobada' ? 'success' : 'error'}
                                   size="small"
+                                  variant="outlined"
                                 />
                               )}
                             </Box>
                           </Box>
 
                           <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                            <strong>Mecánico:</strong> {getMechanicName(valoracion.mecanicoId)}
+                            <strong>Mecánico:</strong> {valoracion.mecanicoId ? getMechanicName(valoracion.mecanicoId) : 'Sin asignar (disponible para todos)'}
                           </Typography>
 
                           <Box sx={{ mb: 2 }}>
                             <Typography variant="body2" color="text.secondary">
-                              <strong>Tareas totales:</strong> {valoracion.tareas?.length || 0}
-                            </Typography>
-                            <Typography variant="body2" color="success.main">
-                              <strong>Tareas aceptadas:</strong> {tareasAceptadas}
+                              <strong>Reparaciones registradas:</strong> {valoracion.tareas?.length || 0}
                             </Typography>
                           </Box>
 
-                          {tareasAceptadas > 0 && (
-                            <Typography variant="h6" color="primary.main" sx={{ mt: 2, mb: 2 }}>
-                              <AttachMoney sx={{ verticalAlign: 'middle', mr: 1 }} />
-                              Costo aprobado: ₡{calcularCostoAceptado(valoracion).toLocaleString()}
-                            </Typography>
-                          )}
-
                           <Divider sx={{ my: 2 }} />
 
-                          {ordenExistente ? (
-                            <Alert 
-                              severity={ordenExistente.estado === 'pendiente_asignacion' ? "warning" : "info"} 
-                              sx={{ mb: 2 }}
-                              action={
-                                ordenExistente.estado === 'pendiente_asignacion' && (
-                                  <Button
-                                    size="small"
-                                    variant="contained"
-                                    color="primary"
-                                    onClick={() => handleOpenCreateOT(valoracion)}
-                                    startIcon={<Assignment />}
-                                  >
-                                    Asignar Mecánico
-                                  </Button>
-                                )
-                              }
-                            >
-                              {ordenExistente.estado === 'pendiente_asignacion' ? (
-                                <>🔄 Orden {ordenExistente.numeroOT} pendiente de asignación</>
-                              ) : (
-                                <>✅ Orden {ordenExistente.numeroOT} ya asignada</>
-                              )}
+                          {valoracion.estado === 'pendiente_valoracion' && (
+                            <Alert severity="warning" sx={{ mb: 2 }}>
+                              ⏳ Pendiente de que un mecánico tome la valoración.
                             </Alert>
-                          ) : puedeCrearOrden ? (
-                            <Alert 
-                              severity="success" 
+                          )}
+
+                          {valoracion.estado === 'en_proceso' && (
+                            <Alert severity="info" sx={{ mb: 2 }}>
+                              🔧 En proceso por el mecánico.
+                            </Alert>
+                          )}
+
+                          {valoracion.estado === 'completada' && !cotizacionExistente && (
+                            <Alert
+                              severity="success"
                               sx={{ mb: 2 }}
                               action={
                                 <Button
                                   size="small"
                                   variant="contained"
                                   color="success"
-                                  onClick={() => handleOpenCreateOT(valoracion)}
+                                  onClick={() => handleOpenCotizacionModal(valoracion)}
                                   startIcon={<Assignment />}
                                 >
-                                  Crear OT
+                                  Crear cotización
                                 </Button>
                               }
                             >
-                              ✅ Cliente completó su revisión. Puedes crear la orden de trabajo.
+                              ✅ Valoración completada. Puedes generar la cotización.
                             </Alert>
-                          ) : (
+                          )}
+
+                          {cotizacionExistente && cotizacionExistente.estado === 'pendiente_aprobacion_cliente' && (
                             <Alert severity="warning" sx={{ mb: 2 }}>
-                              ⏳ Esperando respuesta del cliente
+                              ⏳ Cotización enviada. Esperando respuesta del cliente.
+                            </Alert>
+                          )}
+
+                          {cotizacionExistente && cotizacionExistente.estado === 'aprobada' && (
+                            <Alert severity="success" sx={{ mb: 2 }}>
+                              ✅ Cotización aprobada. Se generó (o se generará) una Orden de Trabajo.
+                            </Alert>
+                          )}
+
+                          {cotizacionExistente && cotizacionExistente.estado === 'rechazada' && (
+                            <Alert severity="error" sx={{ mb: 2 }}>
+                              ❌ Cotización rechazada por el cliente.
                             </Alert>
                           )}
                         </CardContent>
@@ -1468,6 +1515,19 @@ const TallerPage = () => {
                           )}
                         </Box>
                       </CardContent>
+
+                      <CardActions sx={{ justifyContent: 'flex-end', pt: 0 }}>
+                        {!ot.mecanicoAsignado && ot.estado === 'pendiente_asignacion' && (
+                          <Button
+                            size="small"
+                            variant="contained"
+                            startIcon={<Assignment />}
+                            onClick={() => handleOpenAsignarOTModal(ot)}
+                          >
+                            Asignar mecánico
+                          </Button>
+                        )}
+                      </CardActions>
                     </Card>
                   </Grid>
                 ))}
@@ -1822,7 +1882,7 @@ const TallerPage = () => {
         </form>
       </Dialog>
 
-      {/* MODAL: ASIGNAR VALORACIÓN */}
+      {/* MODAL: CREAR VALORACIÓN (pendiente, visible para todos los mecánicos) */}
       <Dialog 
         open={openValoracionModal} 
         onClose={handleCloseValoracionModal} 
@@ -1831,7 +1891,7 @@ const TallerPage = () => {
         PaperProps={{ sx: { borderRadius: 2 } }}
       >
         <DialogTitle sx={{ backgroundColor: 'secondary.main', color: 'white' }}>
-          Asignar Valoración a Mecánico
+          Crear Valoración Pendiente
         </DialogTitle>
         <form onSubmit={handleSubmitValoracion}>
           <DialogContent sx={{ pt: 3 }}>
@@ -1860,35 +1920,137 @@ const TallerPage = () => {
               sx={{ mb: 2 }}
             />
 
-            <Autocomplete
-              options={mechanics}
-              getOptionLabel={(option) => `${option.nombre_completo} - ${option.specialty || 'Sin especialidad'}`}
-              value={mechanics.find((m) => m.id === valoracionFormData.mecanicoId) || null}
-              onChange={(_event, newValue) => {
-                setValoracionFormData((prev) => ({ ...prev, mecanicoId: newValue ? newValue.id : '' }));
-              }}
-              renderInput={(params) => (
-                <TextField 
-                  {...params} 
-                  label="Mecánico" 
-                  required 
-                  placeholder="Selecciona un mecánico"
-                  InputProps={{ 
-                    ...params.InputProps,
-                    startAdornment: <InputAdornment position="start">🔧</InputAdornment>
-                  }}
-                />
-              )}
-            />
+            <Alert severity="info" sx={{ mt: 2 }}>
+              Esta valoración se crea en estado <strong>pendiente</strong> y aparecerá en el panel de <strong>todos</strong> los mecánicos.
+              El primer mecánico que la tome será quien la trabaje.
+            </Alert>
           </DialogContent>
           <DialogActions sx={{ p: 3, pt: 0 }}>
             <Button onClick={handleCloseValoracionModal} disabled={loading}>Cancelar</Button>
             <Button type="submit" variant="contained" disabled={loading}
               startIcon={loading && <CircularProgress size={20} />}>
-              {loading ? 'Asignando...' : 'Asignar Valoración'}
+              {loading ? 'Creando...' : 'Crear Valoración'}
             </Button>
           </DialogActions>
         </form>
+      </Dialog>
+
+      {/* MODAL: CREAR COTIZACIÓN (desde valoración) */}
+      <Dialog
+        open={openCotizacionModal}
+        onClose={handleCloseCotizacionModal}
+        maxWidth="md"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 2 } }}
+      >
+        <DialogTitle sx={{ backgroundColor: 'success.main', color: 'white' }}>
+          Crear Cotización
+        </DialogTitle>
+        <DialogContent sx={{ pt: 3 }}>
+          {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+          {success && <Alert severity="success" sx={{ mb: 2 }}>{success}</Alert>}
+
+          {selectedValoracion && (
+            <Alert severity="info" sx={{ mb: 2 }}>
+              Vehículo: <strong>{getVehicleInfo(selectedValoracion.vehiculoId)}</strong>
+            </Alert>
+          )}
+
+          <Typography variant="h6" sx={{ mb: 1 }}>Reparaciones (obligatorias / opcionales)</Typography>
+          {cotizacionItems.length === 0 ? (
+            <Alert severity="warning" sx={{ mb: 2 }}>
+              Esta valoración no tiene reparaciones registradas.
+            </Alert>
+          ) : (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mb: 3 }}>
+              {cotizacionItems.map((item) => (
+                <Paper key={item.id} sx={{ p: 2, borderRadius: 2 }} variant="outlined">
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap' }}>
+                    <Box sx={{ flex: 1, minWidth: 260 }}>
+                      <Typography variant="subtitle1"><strong>{item.nombre}</strong></Typography>
+                      <Typography variant="body2" color="text.secondary">{item.descripcion}</Typography>
+                      <FormControlLabel
+                        control={
+                          <Switch
+                            checked={item.obligatorio}
+                            onChange={(e) => updateItemObligatorio(item.id, e.target.checked)}
+                          />
+                        }
+                        label={item.obligatorio ? 'Obligatoria' : 'Opcional'}
+                      />
+                    </Box>
+                    <TextField
+                      label="Precio (₡)"
+                      type="number"
+                      value={item.precio}
+                      onChange={(e) => updateItemPrecio(item.id, Number(e.target.value))}
+                      sx={{ width: 200 }}
+                      InputProps={{ startAdornment: <InputAdornment position="start">₡</InputAdornment> }}
+                    />
+                  </Box>
+                </Paper>
+              ))}
+            </Box>
+          )}
+
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+            <Typography variant="h6">Repuestos</Typography>
+            <Button variant="outlined" onClick={addRepuesto} startIcon={<Add />}>
+              Agregar repuesto
+            </Button>
+          </Box>
+
+          {cotizacionRepuestos.length === 0 ? (
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              (Opcional) Agrega repuestos y sus precios.
+            </Typography>
+          ) : (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mb: 2 }}>
+              {cotizacionRepuestos.map((r) => (
+                <Paper key={r.id} sx={{ p: 2, borderRadius: 2 }} variant="outlined">
+                  <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <TextField
+                      label="Nombre"
+                      value={r.nombre}
+                      onChange={(e) => updateRepuesto(r.id, 'nombre', e.target.value)}
+                      sx={{ flex: 1, minWidth: 220 }}
+                    />
+                    <TextField
+                      label="Cantidad"
+                      type="number"
+                      value={r.cantidad}
+                      onChange={(e) => updateRepuesto(r.id, 'cantidad', Number(e.target.value))}
+                      sx={{ width: 140 }}
+                    />
+                    <TextField
+                      label="Precio unitario (₡)"
+                      type="number"
+                      value={r.precioUnitario}
+                      onChange={(e) => updateRepuesto(r.id, 'precioUnitario', Number(e.target.value))}
+                      sx={{ width: 200 }}
+                      InputProps={{ startAdornment: <InputAdornment position="start">₡</InputAdornment> }}
+                    />
+                    <IconButton color="error" onClick={() => removeRepuesto(r.id)}>
+                      <Delete />
+                    </IconButton>
+                  </Box>
+                </Paper>
+              ))}
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ p: 3, pt: 0 }}>
+          <Button onClick={handleCloseCotizacionModal} disabled={loading}>Cancelar</Button>
+          <Button
+            onClick={handleSubmitCotizacion}
+            variant="contained"
+            color="success"
+            disabled={loading || !selectedValoracion}
+            startIcon={loading && <CircularProgress size={20} />}
+          >
+            {loading ? 'Creando...' : 'Enviar cotización al cliente'}
+          </Button>
+        </DialogActions>
       </Dialog>
 
       {/* MODAL: CREAR ORDEN DE TRABAJO */}
@@ -1996,133 +2158,88 @@ const TallerPage = () => {
         </form>
       </Dialog>
 
-      {/* MODAL: CREAR/ASIGNAR ORDEN DE TRABAJO DESDE VALORACIÓN */}
+      {/* MODAL: ASIGNAR MECÁNICO A OT (desde cotización) */}
       <Dialog
-        open={openCreateOTModal}
-        onClose={handleCloseCreateOTModal}
-        maxWidth="md"
+        open={openAsignarOTModal}
+        onClose={handleCloseAsignarOTModal}
+        maxWidth="sm"
         fullWidth
         PaperProps={{ sx: { borderRadius: 2 } }}
       >
-        <DialogTitle sx={{ backgroundColor: 'success.main', color: 'white' }}>
-          {selectedValoracion && getOrdenByValoracionId(selectedValoracion.id) 
-            ? 'Asignar Mecánico a Orden de Trabajo' 
-            : 'Crear Orden de Trabajo desde Valoración'}
+        <DialogTitle sx={{ backgroundColor: 'warning.main', color: 'white' }}>
+          Asignar Mecánico a Orden de Trabajo
         </DialogTitle>
-
         <DialogContent sx={{ pt: 3 }}>
-          {selectedValoracion && (
-            <>
-              <Alert severity="info" sx={{ mb: 3 }}>
-                <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
-                  🚗 {getVehicleInfo(selectedValoracion.vehiculoId)}
-                </Typography>
-                <Typography variant="body2">
-                  <strong>Tareas aceptadas por el cliente:</strong> {contarTareasAceptadas(selectedValoracion)}
-                </Typography>
-                <Typography variant="body2">
-                  <strong>Costo total aprobado:</strong> ₡{calcularCostoAceptado(selectedValoracion).toLocaleString()}
-                </Typography>
-                {getOrdenByValoracionId(selectedValoracion.id) && (
-                  <Typography variant="body2" sx={{ mt: 1, fontWeight: 'bold' }}>
-                    Orden existente: {getOrdenByValoracionId(selectedValoracion.id)?.numeroOT}
-                  </Typography>
-                )}
-              </Alert>
-
-              <Typography variant="subtitle1" sx={{ mb: 2, fontWeight: 'bold' }}>
-                Tareas que se incluirán en la orden:
+          {selectedOT && (
+            <Alert severity="info" sx={{ mb: 2 }}>
+              <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
+                {selectedOT.numeroOT} · {getVehicleInfo(selectedOT.vehiculoId)}
               </Typography>
-
-              <Paper sx={{ p: 2, mb: 3, backgroundColor: '#f5f5f5', borderRadius: 1 }}>
-                <List>
-                  {selectedValoracion.tareas
-                    ?.filter((t) => t.estado === 'aceptada')
-                    .map((tarea, index) => (
-                      <Box key={tarea.id}>
-                        <ListItem sx={{ alignItems: 'flex-start' }}>
-                          <Box sx={{ width: '100%' }}>
-                            <Typography variant="body1" sx={{ fontWeight: 'bold' }}>
-                              {index + 1}. {tarea.nombre}
-                            </Typography>
-                            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                              {tarea.descripcion}
-                            </Typography>
-                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 1 }}>
-                              <Typography variant="body2" color="primary.main">
-                                ₡{tarea.precioEstimado.toLocaleString()}
-                              </Typography>
-                            </Box>
-                          </Box>
-                        </ListItem>
-                        {index < (selectedValoracion.tareas?.filter((t) => t.estado === 'aceptada').length || 0) - 1 && (
-                          <Divider sx={{ my: 1 }} />
-                        )}
-                      </Box>
-                    ))}
-                </List>
-              </Paper>
-
-              <FormControl fullWidth sx={{ mb: 2 }}>
-                <InputLabel>Mecánico Asignado *</InputLabel>
-                <Select
-                  value={mecanicoSeleccionado}
-                  onChange={(e) => setMecanicoSeleccionado(e.target.value)}
-                  label="Mecánico Asignado *"
-                >
-                  {mechanics.map(mechanic => (
-                    <MenuItem key={mechanic.id} value={mechanic.id}>
-                      {mechanic.nombre_completo} {mechanic.specialty ? `(${mechanic.specialty})` : ''}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-
-              <FormControl fullWidth sx={{ mb: 2 }}>
-                <InputLabel>Prioridad *</InputLabel>
-                <Select
-                  value={prioridad}
-                  onChange={(e) => setPrioridad(e.target.value as any)}
-                  label="Prioridad *"
-                >
-                  <MenuItem value="baja">Baja</MenuItem>
-                  <MenuItem value="media">Media</MenuItem>
-                  <MenuItem value="alta">Alta</MenuItem>
-                  <MenuItem value="urgente">Urgente</MenuItem>
-                </Select>
-              </FormControl>
-
-              <TextField
-                fullWidth
-                multiline
-                rows={3}
-                label="Observaciones adicionales"
-                value={observaciones}
-                onChange={(e) => setObservaciones(e.target.value)}
-                placeholder="Notas adicionales para el mecánico..."
-              />
-            </>
+              <Typography variant="body2">
+                Estado actual: <strong>{selectedOT.estado}</strong>
+              </Typography>
+            </Alert>
           )}
-        </DialogContent>
 
+          {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+          {success && <Alert severity="success" sx={{ mb: 2 }}>{success}</Alert>}
+
+          <FormControl fullWidth sx={{ mb: 2 }}>
+            <InputLabel>Mecánico *</InputLabel>
+            <Select
+              value={asignarMecanicoId}
+              onChange={(e) => setAsignarMecanicoId(e.target.value)}
+              label="Mecánico *"
+            >
+              {mechanics.map((m) => (
+                <MenuItem key={m.id} value={m.id}>
+                  {m.nombre_completo} {m.specialty ? `(${m.specialty})` : ''}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+
+          <FormControl fullWidth sx={{ mb: 2 }}>
+            <InputLabel>Prioridad *</InputLabel>
+            <Select
+              value={asignarPrioridad}
+              onChange={(e) => setAsignarPrioridad(e.target.value as any)}
+              label="Prioridad *"
+            >
+              <MenuItem value="baja">Baja</MenuItem>
+              <MenuItem value="media">Media</MenuItem>
+              <MenuItem value="alta">Alta</MenuItem>
+              <MenuItem value="urgente">Urgente</MenuItem>
+            </Select>
+          </FormControl>
+
+          <TextField
+            fullWidth
+            multiline
+            rows={3}
+            label="Observaciones"
+            value={asignarObservaciones}
+            onChange={(e) => setAsignarObservaciones(e.target.value)}
+            placeholder="Notas opcionales para el mecánico..."
+          />
+        </DialogContent>
         <DialogActions sx={{ p: 3, pt: 0 }}>
-          <Button onClick={handleCloseCreateOTModal}>Cancelar</Button>
+          <Button onClick={handleCloseAsignarOTModal} disabled={loading}>Cancelar</Button>
           <Button
-            onClick={handleCreateOrdenTrabajo}
+            onClick={handleAsignarOT}
             variant="contained"
-            color="success"
-            disabled={loading || !mecanicoSeleccionado}
-            startIcon={loading ? <CircularProgress size={20} /> : <CheckCircle />}
+            color="warning"
+            disabled={loading || !asignarMecanicoId}
+            startIcon={loading ? <CircularProgress size={20} /> : <Assignment />}
           >
-            {loading 
-              ? 'Procesando...' 
-              : selectedValoracion && getOrdenByValoracionId(selectedValoracion.id)
-                ? 'Asignar Mecánico'
-                : 'Crear y Asignar OT'
-            }
+            {loading ? 'Asignando...' : 'Asignar'}
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* MODAL: CREAR/ASIGNAR ORDEN DE TRABAJO DESDE VALORACIÓN */}
+      
+
     </Box>
   );
 };

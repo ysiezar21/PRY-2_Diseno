@@ -34,6 +34,8 @@ import {
   MenuItem,
   Badge,
   LinearProgress,
+  Switch,
+  FormControlLabel,
 } from '@mui/material';
 import { useAuthContext } from '../contexts/AuthContext';
 import {
@@ -56,7 +58,7 @@ import {
   PictureAsPdf,
 } from '@mui/icons-material';
 
-import { valoracionService, type Valoracion, type TareaValoracion } from '../api/services/valoracion.service';
+import { valoracionService, type Valoracion } from '../api/services/valoracion.service';
 import { vehicleService } from '../api/services/vehicle.service';
 import { clientService } from '../api/services/client.service';
 import { ordenTrabajoService, type OrdenTrabajo, type TareaOrdenTrabajo, type RepuestoUsado } from '../api/services/ordenTrabajo.service';
@@ -76,6 +78,7 @@ const MecanicoPage = () => {
 
   // Datos
   const [valoraciones, setValoraciones] = useState<Valoracion[]>([]);
+  const [valoracionesDisponibles, setValoracionesDisponibles] = useState<Valoracion[]>([]);
   const [ordenesTrabajo, setOrdenesTrabajo] = useState<OrdenTrabajo[]>([]);
   const [facturas, setFacturas] = useState<Factura[]>([]);
   const [vehicles, setVehicles] = useState<any[]>([]);
@@ -90,7 +93,7 @@ const MecanicoPage = () => {
   const [tareaFormData, setTareaFormData] = useState({
     nombre: '',
     descripcion: '',
-    precioEstimado: 0,
+    obligatorio: true,
   });
 
   // Modal de trabajar en OT
@@ -131,11 +134,24 @@ const MecanicoPage = () => {
   const loadAllData = async () => {
     await Promise.all([
       loadValoraciones(),
+      loadValoracionesDisponibles(),
       loadOrdenesTrabajo(),
       loadFacturas(),
       loadVehicles(),
       loadClients(),
     ]);
+  };
+
+  const loadValoracionesDisponibles = async () => {
+    if (!user?.workshopId) return;
+    try {
+      const result = await valoracionService.getValoracionesDisponibles(user.workshopId);
+      if (result.success && result.data) {
+        setValoracionesDisponibles(result.data);
+      }
+    } catch (err) {
+      console.error('Error cargando valoraciones disponibles:', err);
+    }
   };
 
   const loadValoraciones = async () => {
@@ -214,6 +230,26 @@ const MecanicoPage = () => {
     setSelectedValoracion(null);
   };
 
+  const handleTomarValoracion = async (valoracionId: string) => {
+    if (!user?.id) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await valoracionService.tomarValoracion(valoracionId, user.id);
+      if (res.success) {
+        setSuccess('✅ Valoración tomada. Ahora aparece en "Mis valoraciones"');
+        await Promise.all([loadValoraciones(), loadValoracionesDisponibles()]);
+      } else {
+        setError(res.message);
+      }
+    } catch (err: any) {
+      console.error('Error tomando valoración:', err);
+      setError(err.message || 'Error al tomar valoración');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // ========== GESTIÓN DE TAREAS (VALORACIÓN) ==========
 
   const handleOpenTareaModal = () => {
@@ -227,7 +263,7 @@ const MecanicoPage = () => {
     setTareaFormData({
       nombre: '',
       descripcion: '',
-      precioEstimado: 0,
+      obligatorio: true,
     });
     setError(null);
   };
@@ -236,8 +272,12 @@ const MecanicoPage = () => {
     const { name, value } = e.target;
     setTareaFormData((prev) => ({
       ...prev,
-      [name]: name === 'precioEstimado' ? parseFloat(value) || 0 : value,
+      [name]: value,
     }));
+  };
+
+  const handleTareaObligatorioChange = (checked: boolean) => {
+    setTareaFormData((prev) => ({ ...prev, obligatorio: checked }));
   };
 
   const handleSubmitTarea = async (e: React.FormEvent) => {
@@ -303,7 +343,7 @@ const MecanicoPage = () => {
   const handleEnviarACliente = async () => {
     if (!selectedValoracion) return;
 
-    if (!window.confirm('¿Enviar valoración al cliente para aprobación? Ya no podrás modificar las tareas.')) {
+    if (!window.confirm('¿Finalizar la valoración? Luego el administrador podrá generar la cotización.')) {
       return;
     }
 
@@ -311,14 +351,14 @@ const MecanicoPage = () => {
     try {
       const result = await valoracionService.enviarACliente(selectedValoracion.id);
       if (result.success) {
-        setSuccess('¡Valoración enviada al cliente!');
+        setSuccess('¡Valoración finalizada! Lista para cotización.');
         await loadValoraciones();
         handleCloseValoracionModal();
       } else {
         setError(result.message);
       }
     } catch (err) {
-      setError('Error al enviar valoración');
+      setError('Error al finalizar valoración');
     } finally {
       setLoading(false);
     }
@@ -768,7 +808,7 @@ const MecanicoPage = () => {
       case 'pausada':
         return 'default';
       case 'pendiente_aprobacion_cliente':
-        return 'info';
+        return 'success';
       case 'pendiente':
         return 'default';
       case 'generada':
@@ -797,7 +837,7 @@ const MecanicoPage = () => {
       case 'pausada':
         return 'Pausada';
       case 'pendiente_aprobacion_cliente':
-        return 'Enviada al Cliente';
+        return 'Lista para Cotizar (legado)';
       case 'generada':
         return 'Generada';
       case 'pagada':
@@ -822,11 +862,6 @@ const MecanicoPage = () => {
       default:
         return 'default';
     }
-  };
-
-  const calcularCostoTotal = (tareas: TareaValoracion[]) => {
-    if (!tareas || tareas.length === 0) return 0;
-    return tareas.reduce((sum, tarea) => sum + tarea.precioEstimado, 0);
   };
 
   const calcularProgresoTareas = (tareas?: TareaOrdenTrabajo[]) => {
@@ -960,10 +995,54 @@ const MecanicoPage = () => {
         {currentTab === 0 && (
           <Box sx={{ p: 3 }}>
             <Typography variant="h6" gutterBottom>
-              Vehículos Asignados para Valoración
+              Valoraciones
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-              Aquí puedes ver los vehículos que te han asignado para valorar. Crea una lista de tareas necesarias con su precio estimado.
+              Las <strong>valoraciones</strong> se crean automáticamente cuando ingresa un vehículo. Puedes tomar una valoración disponible y
+              registrar las reparaciones necesarias (obligatorias/opcionales) <strong>sin precios</strong>. Los precios se agregan luego en la cotización.
+            </Typography>
+
+            {/* Valoraciones disponibles (para cualquier mecánico) */}
+            <Paper sx={{ p: 2, mb: 3, borderRadius: 2 }} variant="outlined">
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>Disponibles para tomar</Typography>
+                <Chip label={`${valoracionesDisponibles.length}`} color="info" size="small" />
+              </Box>
+
+              {valoracionesDisponibles.length === 0 ? (
+                <Typography variant="body2" color="text.secondary">No hay valoraciones disponibles en este momento.</Typography>
+              ) : (
+                <Grid container spacing={2}>
+                  {valoracionesDisponibles.map((v) => (
+                    <Grid item xs={12} md={6} key={v.id}>
+                      <Card variant="outlined" sx={{ borderRadius: 2 }}>
+                        <CardContent>
+                          <Typography variant="subtitle1" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <DirectionsCar fontSize="small" /> {getVehicleInfo(v.vehiculoId)}
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                            Estado: <strong>{getEstadoLabel(v.estado)}</strong>
+                          </Typography>
+                        </CardContent>
+                        <CardActions sx={{ justifyContent: 'flex-end' }}>
+                          <Button
+                            size="small"
+                            variant="contained"
+                            onClick={() => handleTomarValoracion(v.id)}
+                            disabled={loading}
+                          >
+                            Tomar valoración
+                          </Button>
+                        </CardActions>
+                      </Card>
+                    </Grid>
+                  ))}
+                </Grid>
+              )}
+            </Paper>
+
+            <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 1 }}>
+              Mis valoraciones
             </Typography>
 
             {loadingData ? (
@@ -1007,8 +1086,11 @@ const MecanicoPage = () => {
                         </Typography>
 
                         {valoracion.tareas && valoracion.tareas.length > 0 && (
-                          <Typography variant="body2" color="primary.main" sx={{ fontWeight: 'bold' }}>
-                            Costo estimado: ₡{calcularCostoTotal(valoracion.tareas).toLocaleString()}
+                          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                            <strong>Obligatorias:</strong>{' '}
+                            {valoracion.tareas.filter((t) => t.obligatorio === true).length} —{' '}
+                            <strong>Opcionales:</strong>{' '}
+                            {valoracion.tareas.filter((t) => t.obligatorio !== true).length}
                           </Typography>
                         )}
 
@@ -1336,7 +1418,7 @@ const MecanicoPage = () => {
 
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
                 <Typography variant="h6">Lista de Tareas</Typography>
-                {selectedValoracion.estado !== 'pendiente_aprobacion_cliente' && (
+                {selectedValoracion.estado !== 'completada' && (
                   <Button
                     variant="contained"
                     startIcon={<Add />}
@@ -1364,23 +1446,14 @@ const MecanicoPage = () => {
                           <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
                             {tarea.descripcion}
                           </Typography>
-                          <Typography variant="body1" color="primary.main" sx={{ mt: 1, fontWeight: 'bold' }}>
-                            Precio estimado: ₡{tarea.precioEstimado.toLocaleString()}
-                          </Typography>
-                          {tarea.estado !== 'propuesta' && (
-                            <Chip
-                              label={
-                                tarea.estado === 'aceptada'
-                                  ? '✅ Aceptada por cliente'
-                                  : '❌ Rechazada por cliente'
-                              }
-                              color={tarea.estado === 'aceptada' ? 'success' : 'error'}
-                              size="small"
-                              sx={{ mt: 1 }}
-                            />
-                          )}
+                          <Chip
+                            label={tarea.obligatorio ? 'Obligatoria' : 'Opcional'}
+                            color={tarea.obligatorio ? 'warning' : 'info'}
+                            size="small"
+                            sx={{ mt: 1 }}
+                          />
                         </Box>
-                        {selectedValoracion.estado !== 'pendiente_aprobacion_cliente' && (
+                        {selectedValoracion.estado !== 'completada' && (
                           <IconButton
                             color="error"
                             onClick={() => handleDeleteTarea(tarea.id)}
@@ -1398,18 +1471,19 @@ const MecanicoPage = () => {
               {selectedValoracion.tareas && selectedValoracion.tareas.length > 0 && (
                 <Paper sx={{ p: 2, mt: 2, backgroundColor: '#f5f5f5' }}>
                   <Typography variant="h6">
-                    Costo Total Estimado: ₡{calcularCostoTotal(selectedValoracion.tareas).toLocaleString()}
+                    Tareas registradas: {selectedValoracion.tareas.length} (Obligatorias: {selectedValoracion.tareas.filter(t => t.obligatorio).length}, Opcionales: {selectedValoracion.tareas.filter(t => !t.obligatorio).length})
                   </Typography>
                 </Paper>
               )}
-            </>
+</>
           )}
         </DialogContent>
 
         <DialogActions>
           <Button onClick={handleCloseValoracionModal}>Cerrar</Button>
           {selectedValoracion && 
-           selectedValoracion.estado !== 'pendiente_aprobacion_cliente' && 
+           selectedValoracion.estado !== 'completada' &&
+           selectedValoracion.estado !== 'cotizada' && 
            selectedValoracion.tareas && 
            selectedValoracion.tareas.length > 0 && (
             <Button
@@ -1418,7 +1492,7 @@ const MecanicoPage = () => {
               onClick={handleEnviarACliente}
               disabled={loading}
             >
-              {loading ? 'Enviando...' : 'Enviar al Cliente'}
+              {loading ? 'Finalizando...' : 'Finalizar valoración'}
             </Button>
           )}
         </DialogActions>
@@ -1464,15 +1538,14 @@ const MecanicoPage = () => {
               sx={{ mb: 2 }}
             />
 
-            <TextField
-              fullWidth
-              label="Precio Estimado (₡)"
-              name="precioEstimado"
-              type="number"
-              value={tareaFormData.precioEstimado}
-              onChange={handleTareaInputChange}
-              required
-              InputProps={{ inputProps: { min: 0, step: 100 } }}
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={tareaFormData.obligatorio}
+                  onChange={(e) => handleTareaObligatorioChange(e.target.checked)}
+                />
+              }
+              label={tareaFormData.obligatorio ? 'Obligatoria' : 'Opcional'}
             />
           </DialogContent>
           <DialogActions>

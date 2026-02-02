@@ -80,10 +80,10 @@ const Header = ({ onDrawerToggle }: HeaderProps) => {
       sx={{
         // En pantallas pequeñas (xs) ocupa todo el ancho
         // En pantallas medianas y grandes (sm+) deja espacio para el sidebar (240px)
-        width: { sm: `calc(100% - ${240}px)` },
+        width: { sm: `calc(100% - ${0}px)` },
         
         // Margen izquierdo de 240px en pantallas sm+ para no superponerse con el sidebar
-        ml: { sm: `${240}px` },
+        //ml: { sm: `${240}px` },
       }}
     >
       <Toolbar>

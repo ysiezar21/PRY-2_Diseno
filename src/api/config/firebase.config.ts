@@ -10,7 +10,9 @@ import { getFirestore } from 'firebase/firestore';
 // Reemplaza estos valores con los de tu proyecto Firebase
 // Puedes obtenerlos en: Firebase Console > Configuración del proyecto > Tus apps
 
-const firebaseConfig = {
+// Exportamos el config para poder inicializar una segunda app (auth secundario)
+// sin romper la sesión del usuario actual (p.ej., el administrador creando clientes).
+export const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "TU_API_KEY",
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "tu-proyecto.firebaseapp.com",
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "tu-proyecto",
