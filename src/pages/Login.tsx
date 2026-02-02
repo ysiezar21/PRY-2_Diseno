@@ -29,10 +29,10 @@ const Login = () => {
   // ============================================
   
   // Email del usuario - precargado con un valor de prueba para desarrollo
-  const [email, setEmail] = useState('admin@taller.com');
+  const [email, setEmail] = useState('');
   
   // Contraseña del usuario - precargada con un valor de prueba para desarrollo
-  const [password, setPassword] = useState('password123');
+  const [password, setPassword] = useState('');
   
   // Obtiene funciones y estado del contexto de autenticación
   const { login, error, clearError, loading } = useAuthContext();
@@ -54,10 +54,6 @@ const Login = () => {
     // Intenta iniciar sesión con las credenciales proporcionadas
     // La función login retorna un objeto con success y posibles datos del usuario
     const result = await login(email, password);
-
-    // ============================================
-    // MANEJO DE RESULTADO DEL LOGIN
-    // ============================================
     
     // Si el login fue exitoso, redirige al usuario al dashboard
     if (result.success) {
@@ -71,9 +67,6 @@ const Login = () => {
   };
 
   return (
-    // ============================================
-    // CONTENEDOR PRINCIPAL
-    // ============================================
     // Container centrado con ancho máximo pequeño (xs) para el formulario
     <Container component="main" maxWidth="xs">
       <Box
@@ -84,11 +77,6 @@ const Login = () => {
           alignItems: 'center',   // Centra horizontalmente
         }}
       >
-        
-        {/* ============================================ */}
-        {/* TARJETA DEL FORMULARIO */}
-        {/* ============================================ */}
-        {/* Paper es una superficie elevada de Material-UI (como una tarjeta) */}
         <Paper
           elevation={3}  // Nivel de sombra (elevación visual)
           sx={{
@@ -100,10 +88,6 @@ const Login = () => {
           }}
         >
           
-          {/* ============================================ */}
-          {/* ICONO DE CANDADO */}
-          {/* ============================================ */}
-          {/* Círculo azul con un icono de candado para identificar la página */}
           <Box
             sx={{
               backgroundColor: 'primary.main',  // Color azul del tema
@@ -120,39 +104,24 @@ const Login = () => {
             Iniciar Sesión
           </Typography>
           
-          {/* ============================================ */}
-          {/* ALERTA DE ERROR */}
-          {/* ============================================ */}
-          {/* Solo se muestra si hay un error (ej: credenciales incorrectas) */}
           {error && (
             <Alert severity="error" sx={{ width: '100%', mb: 2 }}>
               {error}
             </Alert>
           )}
 
-          {/* ============================================ */}
-          {/* FORMULARIO DE LOGIN */}
-          {/* ============================================ */}
           <Box component="form" onSubmit={handleSubmit} sx={{ mt: 1, width: '100%' }}>
             
-            {/* ============================================ */}
-            {/* CAMPO: Email */}
-            {/* ============================================ */}
             <TextField
               margin="normal"
               required              // Campo obligatorio
               fullWidth             // Ocupa todo el ancho disponible
               label="Correo Electrónico"
               value={email}
-              // trim() elimina espacios en blanco al inicio y final
               onChange={(e) => setEmail(e.target.value.trim())}
               disabled={loading}    // Deshabilitado mientras se procesa el login
-              helperText="admin@taller.com"  // Texto de ayuda debajo del campo
             />
             
-            {/* ============================================ */}
-            {/* CAMPO: Contraseña */}
-            {/* ============================================ */}
             <TextField
               margin="normal"
               required
@@ -163,12 +132,8 @@ const Login = () => {
               // trim() elimina espacios en blanco al inicio y final
               onChange={(e) => setPassword(e.target.value.trim())}
               disabled={loading}    // Deshabilitado mientras se procesa el login
-              helperText="password123"  // Texto de ayuda debajo del campo
             />
             
-            {/* ============================================ */}
-            {/* BOTÓN: Enviar Formulario */}
-            {/* ============================================ */}
             <Button
               type="submit"
               fullWidth
@@ -183,24 +148,6 @@ const Login = () => {
                 'Iniciar Sesión'
               )}
             </Button>
-            
-            {/* ============================================ */}
-            {/* INFORMACIÓN DE USUARIOS DE PRUEBA */}
-            {/* ============================================ */}
-            {/* Sección informativa para desarrolladores y testers */}
-            <Box sx={{ mt: 2 }}>
-              <Typography variant="body2" color="text.secondary" align="center">
-                Usuarios de prueba (usa los valores predefinidos):
-              </Typography>
-              <Typography variant="body2" color="primary" align="center" sx={{ mt: 1 }}>
-                Email: admin@taller.com
-                <br />
-                Contraseña: password123
-              </Typography>
-              <Typography variant="caption" color="text.secondary" align="center" sx={{ mt: 1, display: 'block' }}>
-                Abre la consola (F12) para ver logs de depuración
-              </Typography>
-            </Box>
             
           </Box>
         </Paper>
