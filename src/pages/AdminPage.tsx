@@ -16,6 +16,15 @@ import { useAuthContext } from '../contexts/AuthContext';
 import { Build, People, CarRepair, Settings } from '@mui/icons-material';
 import type { CreateWorkshopData } from '../api/services/workshop.service';
 import { workshopService } from '../api/services/workshop.service';
+import { useEffect } from 'react';
+import { List, ListItem, ListItemText, Divider } from '@mui/material';
+
+interface Workshop {
+  id: string;
+  nombre: string;
+  nombreDueno: string;
+  email: string;
+}
 
 const AdminPage = () => {
   const { user } = useAuthContext();
@@ -25,6 +34,10 @@ const AdminPage = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+
+  const [workshops, setWorkshops] = useState<Workshop[] | undefined>([]);
+  const [loadingWorkshops, setLoadingWorkshops] = useState(false);
+
   
   // Estados para el formulario
   const [formData, setFormData] = useState<CreateWorkshopData>({
@@ -81,6 +94,10 @@ const AdminPage = () => {
       
       if (result.success) {
         setSuccess('¡Taller creado exitosamente!');
+        setWorkshops(prev => [
+          prev,
+          result.data
+        ]);
         setTimeout(() => {
           handleCloseModal();
         }, 2000);
@@ -94,11 +111,31 @@ const AdminPage = () => {
     }
   };
 
+  useEffect(() => {
+    const loadWorkshops = async () => {
+      setLoadingWorkshops(true);
+
+      try {
+        const result = await workshopService.getAllWorkshops();
+
+        setWorkshops(result.data);
+
+      } catch (error) {
+        console.error('Error al cargar talleres');
+      } finally {
+        setLoadingWorkshops(false);
+      }
+    };
+
+    loadWorkshops();
+  }, []);
+
+
   return (
     <Box sx={{ p: 3 }}>
       <Paper sx={{ p: 4, mb: 4, backgroundColor: 'primary.main', color: 'white' }}>
         <Typography variant="h3" gutterBottom>
-          👑 Panel del Dueño de la Página
+           Panel del Dueño de la Página
         </Typography>
         <Typography variant="h5">
           Bienvenido, {user?.nombre_completo}
@@ -169,9 +206,52 @@ const AdminPage = () => {
         </Paper>
       </Box>
 
+      <Paper sx={{ p: 3, mt: 4 }}>
+        <Typography variant="h5" gutterBottom>
+           Lista de Talleres Registrados
+        </Typography>
+
+        {loadingWorkshops && (
+          <CircularProgress />
+        )}
+
+        {!loadingWorkshops && workshops === undefined && (
+          <Typography color="text.secondary">
+            No hay talleres registrados aún.
+          </Typography>
+        )}
+
+        {!loadingWorkshops && workshops != undefined &&(
+          <List>
+            {workshops.map((taller) => (
+              <Box key={taller.id}>
+                <ListItem alignItems="flex-start">
+                  <ListItemText
+                    primary={taller.nombre}
+                    secondary={
+                      <>
+                        <Typography component="span" variant="body2">
+                          Dueño: {taller.nombreDueno}
+                        </Typography>
+                        <br />
+                        <Typography component="span" variant="body2">
+                          Email: {taller.email}
+                        </Typography>
+                      </>
+                    }
+                  />
+                </ListItem>
+                <Divider />
+              </Box>
+            ))}
+          </List>
+        )}
+      </Paper>
+
+
       <Paper sx={{ p: 3, mt: 4, backgroundColor: '#f5f5f5' }}>
         <Typography variant="h6" gutterBottom>
-          📊 Resumen del Sistema:
+           Resumen del Sistema:
         </Typography>
         <Box sx={{ display: 'flex', gap: 3, mt: 2 }}>
           <Box>
