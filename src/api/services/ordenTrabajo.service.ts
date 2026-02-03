@@ -145,7 +145,7 @@ class OrdenTrabajoService {
   }
 
 /**
- * ⭐ CREAR OT AUTOMÁTICAMENTE cuando cliente completa selección de tareas
+ * CREAR OT AUTOMÁTICAMENTE cuando cliente completa selección de tareas
  * Esta función es llamada automáticamente por el sistema cuando:
  * - Cliente responde la ÚLTIMA tarea pendiente de una valoración
  * - Al menos UNA tarea fue aceptada
@@ -177,7 +177,7 @@ async createOrdenAutomatica(
     const existingOTSnapshot = await getDocs(existingOTQuery);
     
     if (!existingOTSnapshot.empty) {
-      console.log('⚠️  Ya existe OT para esta valoración');
+      console.log('Ya existe OT para esta valoración');
       return {
         success: false,
         message: 'Ya existe una orden de trabajo para esta valoración',
@@ -191,7 +191,7 @@ async createOrdenAutomatica(
     ) || [];
 
     if (tareasAceptadas.length === 0) {
-      console.log('⚠️  No hay tareas aceptadas');
+      console.log('No hay tareas aceptadas');
       return {
         success: false,
         message: 'No hay tareas aceptadas por el cliente',
@@ -205,7 +205,7 @@ async createOrdenAutomatica(
     );
 
     if (!todasRespondidas) {
-      console.log('⚠️  Cliente no ha completado revisión');
+      console.log('Cliente no ha completado revisión');
       return {
         success: false,
         message: 'El cliente aún no ha revisado todas las tareas',
@@ -241,7 +241,7 @@ async createOrdenAutomatica(
       0
     );
 
-    // 9. ⭐ Crear OT SIN mecánico asignado
+    // Crear OT SIN mecánico asignado
     const ordenRef = doc(collection(db, 'ordenesTrabajo'));
     const ordenId = ordenRef.id;
 
@@ -276,16 +276,16 @@ async createOrdenAutomatica(
       mecanicoId: undefined,
     };
 
-    // 🗑️ NUEVA FUNCIONALIDAD: Eliminar la valoración después de crear la OT
+    // Eliminar la valoración después de crear la OT
     try {
       await deleteDoc(doc(db, 'valoraciones', valoracionId));
-      console.log('🗑️  Valoración eliminada:', valoracionId);
+      console.log('Valoración eliminada:', valoracionId);
     } catch (deleteError) {
-      console.warn('⚠️  Error al eliminar valoración (OT ya creada):', deleteError);
+      console.warn('Error al eliminar valoración (OT ya creada):', deleteError);
       // No fallar todo el proceso si falla la eliminación
     }
 
-    console.log('✅ OT AUTOMÁTICA creada:', numeroOT);
+    console.log('OT AUTOMÁTICA creada:', numeroOT);
     console.log(`   Tareas: ${tareasAceptadas.length}/${valoracion.tareas?.length || 0}`);
     console.log(`   Estado: pendiente_asignacion`);
     console.log(`   Costo: ₡${costoTotal.toLocaleString()}`);
@@ -296,7 +296,7 @@ async createOrdenAutomatica(
       data: newOrden,
     };
   } catch (error: any) {
-    console.error('❌ Error creando OT automática:', error);
+    console.error('Error creando OT automática:', error);
     return {
       success: false,
       message: 'Error al generar orden de trabajo automática',
@@ -306,7 +306,7 @@ async createOrdenAutomatica(
 }
 
   /**
-   * ⭐ CREAR OT DESDE COTIZACIÓN aprobada por el cliente
+   * CREAR OT DESDE COTIZACIÓN aprobada por el cliente
    * - Lee la cotización
    * - Toma todas las reparaciones obligatorias + opcionales seleccionadas
    * - Crea OT SIN mecánico asignado
@@ -388,12 +388,12 @@ async createOrdenAutomatica(
 
       return { success: true, message: 'Orden de trabajo creada', data: ordenData as OrdenTrabajo };
     } catch (error: any) {
-      console.error('❌ Error creando OT desde cotización:', error);
+      console.error('Error creando OT desde cotización:', error);
       return { success: false, message: 'Error al crear OT desde cotización', error: error?.message || 'SERVER_ERROR' };
     }
   }
   /**
-   * ⭐ CREAR ORDEN DE TRABAJO MANUALMENTE (para casos especiales)
+   * CREAR ORDEN DE TRABAJO MANUALMENTE (para casos especiales)
    * Esta función permite al jefe del taller crear una OT manualmente
    * Útil cuando el sistema automático falla o para casos excepcionales
    */
@@ -401,7 +401,7 @@ async createOrdenAutomatica(
     data: CreateOrdenTrabajoData
   ): Promise<ApiResponse<OrdenTrabajo>> {
     try {
-      console.log('📝 Creando orden de trabajo manual:', data);
+      console.log('Creando orden de trabajo manual:', data);
       
       const {
         vehiculoId,
@@ -491,7 +491,7 @@ async createOrdenAutomatica(
 
       await setDoc(ordenRef, newOrden);
 
-      console.log('✅ OT MANUAL creada:', numeroOT);
+      console.log('OT MANUAL creada:', numeroOT);
       console.log(`   Estado: ${newOrden.estado}`);
       console.log(`   Mecánico asignado: ${mecanicoAsignado}`);
       console.log(`   Tareas: ${tareasAprobadas.length}`);
@@ -502,7 +502,7 @@ async createOrdenAutomatica(
         data: newOrden,
       };
     } catch (error: any) {
-      console.error('❌ Error creando OT manual:', error);
+      console.error('Error creando OT manual:', error);
       return {
         success: false,
         message: 'Error al crear orden de trabajo',
@@ -512,7 +512,7 @@ async createOrdenAutomatica(
   }
 
   /**
-   * ⭐ CREAR ORDEN DE TRABAJO CON VALORACIÓN (método simplificado)
+   * CREAR ORDEN DE TRABAJO CON VALORACIÓN (método simplificado)
    * Combina la obtención de tareas de valoración con creación manual
    */
   async createOrdenFromValoracion(
@@ -609,7 +609,7 @@ async createOrdenAutomatica(
 
       return ordenResult;
     } catch (error: any) {
-      console.error('❌ Error creando OT desde valoración:', error);
+      console.error('Error creando OT desde valoración:', error);
       return {
         success: false,
         message: 'Error al crear orden de trabajo desde valoración',
@@ -618,12 +618,9 @@ async createOrdenAutomatica(
     }
   }
 
-  /**
-   * ⭐ ASIGNAR MECÁNICO a una OT (Jefe del Taller)
-   * Toma una OT en estado 'pendiente_asignacion' y le asigna un mecánico
-   */
+
 /**
- * ⭐ ASIGNAR MECÁNICO a una OT (Jefe del Taller)
+ * ASIGNAR MECÁNICO a una OT (Jefe del Taller)
  * Toma una OT en estado 'pendiente_asignacion' y le asigna un mecánico
  */
 async asignarMecanico(
@@ -664,7 +661,7 @@ async asignarMecanico(
       };
     }
 
-    // 4. ⭐ PREPARAR DATOS - Eliminar campos undefined
+    // 4.PREPARAR DATOS - Eliminar campos undefined
     const updateData: any = {
       mecanicoId,
       mecanicoAsignado: true,
@@ -674,7 +671,7 @@ async asignarMecanico(
       updatedAt: new Date().toISOString(),
     };
 
-    // ⭐ Solo agregar observaciones si tiene valor
+    // Solo agregar observaciones si tiene valor
     if (observaciones && observaciones.trim() !== '') {
       updateData.observaciones = observaciones;
     } else if (orden.observaciones) {
@@ -685,7 +682,7 @@ async asignarMecanico(
     // 5. Actualizar OT
     await updateDoc(doc(db, 'ordenesTrabajo', ordenId), updateData);
 
-    console.log('✅ Mecánico asignado a OT:', orden.numeroOT);
+    console.log('Mecánico asignado a OT:', orden.numeroOT);
     console.log(`   Mecánico: ${mecanicoId}`);
     console.log(`   Prioridad: ${prioridad}`);
 
@@ -694,7 +691,7 @@ async asignarMecanico(
       message: `Orden ${orden.numeroOT} asignada exitosamente al mecánico`,
     };
   } catch (error: any) {
-    console.error('❌ Error asignando mecánico:', error);
+    console.error('Error asignando mecánico:', error);
     return {
       success: false,
       message: 'Error al asignar mecánico',
@@ -730,7 +727,7 @@ async asignarMecanico(
         data: ordenes,
       };
     } catch (error) {
-      console.error('❌ Error:', error);
+      console.error('Error:', error);
       return {
         success: false,
         message: 'Error al obtener órdenes',
@@ -766,7 +763,7 @@ async asignarMecanico(
         data: ordenes,
       };
     } catch (error) {
-      console.error('❌ Error:', error);
+      console.error('Error:', error);
       return {
         success: false,
         message: 'Error al obtener órdenes',
@@ -802,7 +799,7 @@ async asignarMecanico(
         data: ordenes,
       };
     } catch (error) {
-      console.error('❌ Error:', error);
+      console.error('Error:', error);
       return {
         success: false,
         message: 'Error al obtener órdenes',
@@ -838,7 +835,7 @@ async asignarMecanico(
         data: ordenes,
       };
     } catch (error) {
-      console.error('❌ Error:', error);
+      console.error('Error:', error);
       return {
         success: false,
         message: 'Error al obtener órdenes',
@@ -878,7 +875,7 @@ async asignarMecanico(
         message: 'Orden actualizada',
       };
     } catch (error) {
-      console.error('❌ Error:', error);
+      console.error('Error:', error);
       return {
         success: false,
         message: 'Error al actualizar',
@@ -927,7 +924,7 @@ async asignarMecanico(
         message: 'Tarea completada',
       };
     } catch (error) {
-      console.error('❌ Error:', error);
+      console.error('Error:', error);
       return {
         success: false,
         message: 'Error al completar tarea',
@@ -957,7 +954,7 @@ async asignarMecanico(
         data: orden,
       };
     } catch (error) {
-      console.error('❌ Error:', error);
+      console.error('Error:', error);
       return {
         success: false,
         message: 'Error al obtener orden',
@@ -977,7 +974,7 @@ async asignarMecanico(
         message: 'Orden eliminada',
       };
     } catch (error) {
-      console.error('❌ Error:', error);
+      console.error('Error:', error);
       return {
         success: false,
         message: 'Error al eliminar',

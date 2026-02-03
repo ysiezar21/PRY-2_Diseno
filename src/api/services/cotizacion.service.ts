@@ -130,7 +130,7 @@ class CotizacionService {
 
       return { success: true, message: 'Cotización creada exitosamente', data: newCot };
     } catch (error: any) {
-      console.error('❌ Error creando cotización:', error);
+      console.error('Error creando cotización:', error);
       return { success: false, message: 'Error al crear la cotización', error: error?.message || 'SERVER_ERROR' };
     }
   }
@@ -144,7 +144,7 @@ class CotizacionService {
       cotizaciones.sort((a, b) => new Date(b.fechaCreacion).getTime() - new Date(a.fechaCreacion).getTime());
       return { success: true, message: 'Cotizaciones obtenidas', data: cotizaciones };
     } catch (error) {
-      console.error('❌ Error obteniendo cotizaciones cliente:', error);
+      console.error('Error obteniendo cotizaciones cliente:', error);
       return { success: false, message: 'Error al obtener cotizaciones', data: [] };
     }
   }
@@ -158,7 +158,7 @@ class CotizacionService {
       cotizaciones.sort((a, b) => new Date(b.fechaCreacion).getTime() - new Date(a.fechaCreacion).getTime());
       return { success: true, message: 'Cotizaciones obtenidas', data: cotizaciones };
     } catch (error) {
-      console.error('❌ Error obteniendo cotizaciones taller:', error);
+      console.error('Error obteniendo cotizaciones taller:', error);
       return { success: false, message: 'Error al obtener cotizaciones', data: [] };
     }
   }
@@ -210,7 +210,7 @@ class CotizacionService {
         data: { otId: otRes.data.id, numeroOT: otRes.data.numeroOT },
       };
     } catch (error: any) {
-      console.error('❌ Error respondiendo cotización:', error);
+      console.error('Error respondiendo cotización:', error);
       return { success: false, message: 'Error al responder cotización', error: error?.message || 'SERVER_ERROR' };
     }
   }

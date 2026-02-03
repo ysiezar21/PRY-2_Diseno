@@ -16,7 +16,6 @@ import {
 } from 'firebase/firestore';
 import { db } from '../config/firebase.config';
 
-// ... (mantener todas las interfaces existentes)
 
 export interface RepuestoNecesario {
   nombre: string;
@@ -42,7 +41,7 @@ export interface TareaValoracion {
 export interface Valoracion {
   id: string;
   vehiculoId: string;
-  // En el nuevo flujo el mecánico se asigna al "tomar" la valoración
+  // En el flujo el mecánico se asigna al "tomar" la valoración
   mecanicoId?: string;
   tallerOwnerId: string;
   workshopId: string;
@@ -97,7 +96,6 @@ export interface ApiResponse<T = any> {
 
 class ValoracionService {
   
-  // ... (mantener todos los métodos existentes: createValoracion, addTarea, etc.)
 
   async createValoracion(data: CreateValoracionData): Promise<ApiResponse<Valoracion>> {
     try {
@@ -141,7 +139,7 @@ class ValoracionService {
 
       await setDoc(valoracionRef, newValoracion);
 
-      console.log('✅ Valoración creada:', valoracionId);
+      console.log('Valoración creada:', valoracionId);
 
       return {
         success: true,
@@ -149,7 +147,7 @@ class ValoracionService {
         data: newValoracion,
       };
     } catch (error: any) {
-      console.error('❌ Error creando valoración:', error);
+      console.error('Error creando valoración:', error);
       return {
         success: false,
         message: 'Error al crear la valoración',
@@ -184,7 +182,7 @@ class ValoracionService {
         updatedAt: new Date().toISOString(),
       });
 
-      console.log('✅ Tarea agregada a valoración:', valoracionId);
+      console.log('Tarea agregada a valoración:', valoracionId);
 
       return {
         success: true,
@@ -192,7 +190,7 @@ class ValoracionService {
         data: nuevaTarea,
       };
     } catch (error) {
-      console.error('❌ Error agregando tarea:', error);
+      console.error('Error agregando tarea:', error);
       return {
         success: false,
         message: 'Error al agregar tarea',
@@ -226,14 +224,14 @@ class ValoracionService {
         updatedAt: new Date().toISOString(),
       });
 
-      console.log('✅ Tarea eliminada de valoración:', valoracionId);
+      console.log('Tarea eliminada de valoración:', valoracionId);
 
       return {
         success: true,
         message: 'Tarea eliminada exitosamente',
       };
     } catch (error) {
-      console.error('❌ Error eliminando tarea:', error);
+      console.error('Error eliminando tarea:', error);
       return {
         success: false,
         message: 'Error al eliminar tarea',
@@ -271,14 +269,14 @@ async finalizarValoracion(valoracionId: string): Promise<ApiResponse> {
       updatedAt: new Date().toISOString(),
     });
 
-    console.log('✅ Valoración finalizada:', valoracionId);
+    console.log('Valoración finalizada:', valoracionId);
 
     return {
       success: true,
       message: 'Valoración finalizada. Lista para cotización.',
     };
   } catch (error) {
-    console.error('❌ Error finalizando valoración:', error);
+    console.error('Error finalizando valoración:', error);
     return {
       success: false,
       message: 'Error al finalizar valoración',
@@ -293,11 +291,10 @@ async finalizarValoracion(valoracionId: string): Promise<ApiResponse> {
 async enviarACliente(valoracionId: string): Promise<ApiResponse> {
   return this.finalizarValoracion(valoracionId);
 }/**
-   * ⭐ ACTUALIZADO: Cliente acepta o rechaza tarea
+   *ACTUALIZADO: Cliente acepta o rechaza tarea
    * Ahora crea OT AUTOMÁTICAMENTE cuando cliente responde la última tarea
    */
   /**
- * DEPRECADO en el flujo nuevo.
  * La aprobación/rechazo es sobre la COTIZACIÓN (hecha por el administrador), no sobre la valoración.
  */
 async responderTarea(
@@ -336,7 +333,7 @@ async responderTarea(
         data: valoraciones,
       };
     } catch (error) {
-      console.error('❌ Error obteniendo valoraciones:', error);
+      console.error('Error obteniendo valoraciones:', error);
       return {
         success: false,
         message: 'Error al obtener valoraciones',
@@ -369,7 +366,7 @@ async responderTarea(
         data: valoraciones,
       };
     } catch (error) {
-      console.error('❌ Error obteniendo valoraciones:', error);
+      console.error('Error obteniendo valoraciones:', error);
       return {
         success: false,
         message: 'Error al obtener valoraciones',
@@ -379,7 +376,7 @@ async responderTarea(
   }
 
   /**
-   * ⭐ Valoraciones disponibles para cualquier mecánico del taller
+   * Valoraciones disponibles para cualquier mecánico del taller
    * Creadas cuando se registra el ingreso del vehículo.
    */
   async getValoracionesDisponibles(workshopId: string): Promise<ApiResponse<Valoracion[]>> {
@@ -403,7 +400,7 @@ async responderTarea(
 
       return { success: true, message: 'Valoraciones disponibles', data: valoraciones };
     } catch (error) {
-      console.error('❌ Error obteniendo valoraciones disponibles:', error);
+      console.error('Error obteniendo valoraciones disponibles:', error);
       return { success: false, message: 'Error al obtener valoraciones disponibles', data: [] };
     }
   }
@@ -437,7 +434,7 @@ async responderTarea(
 
       return { success: true, message: 'Valoración tomada exitosamente' };
     } catch (error) {
-      console.error('❌ Error tomando valoración:', error);
+      console.error('Error tomando valoración:', error);
       return { success: false, message: 'Error al tomar valoración' };
     }
   }
@@ -466,7 +463,7 @@ async responderTarea(
         data: valoraciones,
       };
     } catch (error) {
-      console.error('❌ Error obteniendo valoraciones:', error);
+      console.error('Error obteniendo valoraciones:', error);
       return {
         success: false,
         message: 'Error al obtener valoraciones',
@@ -517,7 +514,7 @@ async responderTarea(
         data: valoraciones,
       };
     } catch (error) {
-      console.error('❌ Error obteniendo valoraciones del cliente:', error);
+      console.error('Error obteniendo valoraciones del cliente:', error);
       return {
         success: false,
         message: 'Error al obtener valoraciones',
@@ -542,14 +539,14 @@ async responderTarea(
 
       await updateDoc(doc(db, 'valoraciones', valoracionId), updateData);
 
-      console.log('✅ Valoración actualizada:', valoracionId);
+      console.log('Valoración actualizada:', valoracionId);
 
       return {
         success: true,
         message: 'Valoración actualizada exitosamente',
       };
     } catch (error) {
-      console.error('❌ Error actualizando valoración:', error);
+      console.error('Error actualizando valoración:', error);
       return {
         success: false,
         message: 'Error al actualizar valoración',
@@ -576,7 +573,7 @@ async responderTarea(
         data: valoracion,
       };
     } catch (error) {
-      console.error('❌ Error obteniendo valoración:', error);
+      console.error('Error obteniendo valoración:', error);
       return {
         success: false,
         message: 'Error al obtener valoración',
@@ -588,14 +585,14 @@ async responderTarea(
     try {
       await deleteDoc(doc(db, 'valoraciones', valoracionId));
 
-      console.log('✅ Valoración eliminada:', valoracionId);
+      console.log('Valoración eliminada:', valoracionId);
 
       return {
         success: true,
         message: 'Valoración eliminada exitosamente',
       };
     } catch (error) {
-      console.error('❌ Error eliminando valoración:', error);
+      console.error('Error eliminando valoración:', error);
       return {
         success: false,
         message: 'Error al eliminar valoración',

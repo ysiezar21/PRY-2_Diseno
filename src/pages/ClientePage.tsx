@@ -159,7 +159,7 @@ const ClientePage = () => {
         itemsOpcionalesSeleccionados: opc,
       });
       if (res.success) {
-        setSuccess('✅ Cotización aprobada. Se generó una Orden de Trabajo.');
+        setSuccess('Cotización aprobada. Se generó una Orden de Trabajo.');
         await Promise.all([loadCotizaciones(), loadOrdenesTrabajo()]);
         setTimeout(() => closeResponderCotizacion(), 900);
       } else {
@@ -184,7 +184,7 @@ const ClientePage = () => {
         itemsOpcionalesSeleccionados: [],
       });
       if (res.success) {
-        setSuccess('❌ Cotización rechazada.');
+        setSuccess('Cotización rechazada.');
         await loadCotizaciones();
         setTimeout(() => closeResponderCotizacion(), 900);
       } else {
